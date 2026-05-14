@@ -170,7 +170,8 @@ class RutaQuery:
     country: str = "all"
     distance: str = "all"   # "0-8", "8-12", ... | "all"
     gain: str = "all"       # "0-700", ... | "all"
-    date: str = "all"       # "2025" | "last-90" | "last-365" | "summer" | "winter" | "all"
+    date_from: str = ""     # "YYYY-MM-DD" | ""
+    date_to: str = ""       # "YYYY-MM-DD" | ""
     sort: str = "date-desc"
     offset: int = 0
     limit: int = 10
@@ -800,19 +801,18 @@ def _apply_filters(qry, q: RutaQuery):
         a, b = gain_range
         qry = qry.filter(Route.elevation_gain_m >= a, Route.elevation_gain_m < b)
 
-    # Fecha
-    if q.date and q.date != "all":
-        if q.date.isdigit() and len(q.date) == 4:
-            year = int(q.date)
-            qry = qry.filter(extract("year", Route.started_at) == year)
-        elif q.date == "last-90":
-            qry = qry.filter(Route.started_at >= datetime.now() - timedelta(days=90))
-        elif q.date == "last-365":
-            qry = qry.filter(Route.started_at >= datetime.now() - timedelta(days=365))
-        elif q.date == "summer":
-            qry = qry.filter(extract("month", Route.started_at).in_([6, 7, 8, 9]))
-        elif q.date == "winter":
-            qry = qry.filter(extract("month", Route.started_at).in_([12, 1, 2]))
+    # Fecha — rango libre YYYY-MM-DD
+    if q.date_from:
+        try:
+            qry = qry.filter(Route.started_at >= datetime.fromisoformat(q.date_from))
+        except ValueError:
+            pass
+    if q.date_to:
+        try:
+            from datetime import timedelta as _td
+            qry = qry.filter(Route.started_at < datetime.fromisoformat(q.date_to) + _td(days=1))
+        except ValueError:
+            pass
 
     # Búsqueda libre — canonicalizamos también el término del usuario para que
     # coincida con los valores canónicos persistidos en country/region/sub_region.

@@ -292,17 +292,13 @@
 
     <div class="filter-group">
       <span class="filter-label">Fecha</span>
-      <div class="ctrl-select-wrap">
-        <select class="ctrl-select" id="filter-date">
-          <option value="all">cualquier fecha</option>
-          {% if data.year_max %}<option value="{{ data.year_max }}">{{ data.year_max }}</option>{% endif %}
-          {% if data.year_min and data.year_min != data.year_max %}<option value="{{ data.year_min }}">{{ data.year_min }}</option>{% endif %}
-          <option value="last-90">últimos 90 días</option>
-          <option value="last-365">último año</option>
-          <option value="summer">verano (jun–sep)</option>
-          <option value="winter">invierno (dic–feb)</option>
-        </select>
-        <span class="ctrl-select-chev"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span>
+      <div class="date-range-wrap">
+        <input type="date" id="filter-date-from" class="ctrl-date" aria-label="Desde">
+        <span class="date-range-sep">—</span>
+        <input type="date" id="filter-date-to" class="ctrl-date" aria-label="Hasta">
+        <button id="filter-date-clear" class="date-range-clear hidden" aria-label="Limpiar fechas">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg>
+        </button>
       </div>
     </div>
 

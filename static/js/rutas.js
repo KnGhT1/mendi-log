@@ -398,7 +398,8 @@
         country: "all",
         distance: "all",
         gain: "all",
-        date: "all",
+        date_from: "",
+        date_to: "",
         search: "",
       },
       sort: "date-desc",
@@ -539,7 +540,8 @@
       if (f.region !== "all") params.set("region", f.region);
       if (f.distance !== "all") params.set("distance", f.distance);
       if (f.gain !== "all") params.set("gain", f.gain);
-      if (f.date !== "all") params.set("date", f.date);
+      if (f.date_from) params.set("date_from", f.date_from);
+      if (f.date_to) params.set("date_to", f.date_to);
       if (state.sort !== "date-desc") params.set("sort", state.sort);
       params.set("offset", String(reset ? 0 : state.offset));
       params.set("limit", String(PAGE_SIZE));
@@ -698,7 +700,7 @@
       const isDirty =
         f.region !== "all" || f.country !== "all" ||
         f.distance !== "all" || f.gain !== "all" ||
-        f.date !== "all" || q !== "" ||
+        f.date_from !== "" || f.date_to !== "" || q !== "" ||
         f.difficulty.size !== DEFAULT_DIFFICULTY.length ||
         !DEFAULT_DIFFICULTY.every(d => f.difficulty.has(d)) ||
         state.sort !== "date-desc";
@@ -862,7 +864,39 @@
     bindSelect("filter-region", "region");
     bindSelect("filter-distance", "distance");
     bindSelect("filter-gain", "gain");
-    bindSelect("filter-date", "date");
+
+    // ============ DATE RANGE PICKER ============
+    const dateFrom = $("filter-date-from");
+    const dateTo = $("filter-date-to");
+    const dateClear = $("filter-date-clear");
+
+    function updateDateClear() {
+      if (dateClear) dateClear.classList.toggle("hidden", !state.filters.date_from && !state.filters.date_to);
+    }
+    if (dateFrom) {
+      dateFrom.addEventListener("change", e => {
+        state.filters.date_from = e.target.value;
+        updateDateClear();
+        reload();
+      });
+    }
+    if (dateTo) {
+      dateTo.addEventListener("change", e => {
+        state.filters.date_to = e.target.value;
+        updateDateClear();
+        reload();
+      });
+    }
+    if (dateClear) {
+      dateClear.addEventListener("click", () => {
+        state.filters.date_from = "";
+        state.filters.date_to = "";
+        if (dateFrom) dateFrom.value = "";
+        if (dateTo) dateTo.value = "";
+        updateDateClear();
+        reload();
+      });
+    }
 
     const sortSelect = $("sort-select");
     if (sortSelect) {
@@ -933,7 +967,8 @@
         state.filters.country = "all";
         state.filters.distance = "all";
         state.filters.gain = "all";
-        state.filters.date = "all";
+        state.filters.date_from = "";
+        state.filters.date_to = "";
         state.filters.search = "";
         state.sort = "date-desc";
 
@@ -941,10 +976,13 @@
           const lvl = chip.dataset.filter;
           chip.classList.toggle("active", DEFAULT_DIFFICULTY.includes(lvl));
         });
-        ["filter-country", "filter-region", "filter-distance", "filter-gain", "filter-date"].forEach(id => {
+        ["filter-country", "filter-region", "filter-distance", "filter-gain"].forEach(id => {
           const el = $(id);
           if (el) el.value = "all";
         });
+        if (dateFrom) dateFrom.value = "";
+        if (dateTo) dateTo.value = "";
+        updateDateClear();
         if (sortSelect) sortSelect.value = "date-desc";
         if (searchInput) searchInput.value = "";
         updateSearchUI();
