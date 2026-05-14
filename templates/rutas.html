@@ -1,0 +1,378 @@
+{% extends "base.html" %}
+
+{% block title %}Rutas · mendi.log{% endblock %}
+{% block breadcrumb %}rutas{% endblock %}
+
+{% block topbar_extra %}
+{#
+  HIDDEN-FEATURED-START (topbar_extra)
+  TODO-ELIMINAR: control de intervalo de rotación de la ruta destacada.
+  Para eliminar: borrar este bloque y en app/stats.py eliminar
+  ROTATION_POOL_SIZE, los campos featured/rotation_pool de RutasData
+  y la query pool_rows al final de build_rutas().
+{% if data.has_data and data.rotation_pool|length > 1 %}
+<div class="ctrl-select-wrap" title="Rotación de la ruta destacada">
+  <span class="ctrl-select-icon">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a9 9 0 0 1-9 9M3 12a9 9 0 0 1 9-9M21 12l-3-3M21 12l-3 3M3 12l3 3M3 12l3-3"/></svg>
+  </span>
+  <select id="featured-rotation-select" class="ctrl-select" aria-label="Intervalo de rotación de la ruta destacada">
+    <option value="5000">cada 5 s</option>
+    <option value="15000" selected>cada 15 s</option>
+    <option value="30000">cada 30 s</option>
+    <option value="60000">cada 60 s</option>
+    <option value="0">sin rotar</option>
+  </select>
+  <span class="ctrl-select-chev">
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+  </span>
+</div>
+{% endif %}
+  HIDDEN-FEATURED-END
+#}
+{% if current_user and current_user.role in ("admin", "user") %}
+<a href="/importar" class="ctrl primary" title="Importar nueva ruta GPX" style="text-decoration:none;">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 4v12m-5-5l5-5 5 5M5 20h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  Importar GPX
+</a>
+{% endif %}
+{% endblock %}
+
+{% block footnote_text %}mendi.log · rutas · {{ data.total }} ruta{{ '' if data.total == 1 else 's' }} importada{{ '' if data.total == 1 else 's' }}{% endblock %}
+
+{% block content %}
+
+{% if not data.has_data %}
+
+  <section class="page-head">
+    <div class="page-head-grid"></div>
+    <div class="page-head-content">
+      <div>
+        <div class="page-eyebrow">índice de rutas</div>
+        <h1 class="page-title">Aún no hay <em>rutas</em></h1>
+        <div class="page-meta">
+          <div><span class="v">0</span><span class="l">rutas</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="empty">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+      <path d="M3 17l6-6 4 4 8-8M14 7h7v7" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <h3>Importa tus primeros GPX</h3>
+    <p>Tu índice de rutas, perfiles de elevación y mapa aparecerán aquí en cuanto subas archivos.</p>
+    {% if current_user and current_user.role in ("admin", "user") %}
+    <a href="/importar" class="btn">Importar GPX</a>
+    {% else %}
+    <p class="empty-hint">Tu rol actual <span class="role-chip role-{{ current_user.role }}">{{ current_user.role }}</span> es solo de lectura. Contacta con un administrador.</p>
+    {% endif %}
+  </div>
+
+{% else %}
+
+  {# ----- número en palabras (cosmético, como el mockup "cinco rutas") ----- #}
+  {% set _num_es = {1:'una', 2:'dos', 3:'tres', 4:'cuatro', 5:'cinco', 6:'seis', 7:'siete', 8:'ocho', 9:'nueve', 10:'diez'} %}
+  {% set route_word = _num_es.get(data.total, data.total | string) %}
+
+  <!-- HEADER -->
+  <section class="page-head">
+    <div class="page-head-grid"></div>
+    <div class="page-head-content">
+      <div>
+        <div class="page-eyebrow">índice de rutas</div>
+        <h1 class="page-title">
+          {% if data.total == 1 %}Tu <em>ruta</em>
+          {% else %}Tus <em>{{ route_word }}</em> rutas{% endif %}
+        </h1>
+        <div class="page-meta">
+          <div><span class="v">{{ data.total }}</span><span class="l">{{ 'ruta' if data.total == 1 else 'rutas' }}</span></div>
+          <div><span class="v">{{ data.total_km | fmt_km_short }}</span><span class="l">km totales</span></div>
+          <div><span class="v">{{ data.total_gain | fmt_int }}</span><span class="l">m de desnivel</span></div>
+          <div><span class="v">{{ data.region_count }}</span><span class="l">{{ 'región' if data.region_count == 1 else 'regiones' }}</span></div>
+          {% if data.year_min and data.year_max %}
+          <div>
+            <span class="v">
+              {% if data.year_min == data.year_max %}{{ data.year_min }}
+              {% else %}{{ data.year_min }} — {{ data.year_max }}{% endif %}
+            </span>
+            <span class="l">temporada</span>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="view-switch" role="tablist" aria-label="Tipo de vista">
+        <button class="active" data-view="list">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/></svg>
+          Lista
+        </button>
+        <button data-view="grid">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          Cuadrícula
+        </button>
+        <button data-view="map" disabled style="opacity:0.4; cursor:not-allowed;" title="Próximamente">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 4l-6 2v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Mapa
+        </button>
+      </div>
+    </div>
+  </section>
+
+  {#
+    HIDDEN-FEATURED-START (sección principal)
+    TODO-ELIMINAR: sección completa "Ruta destacada".
+    Para eliminar: borrar este bloque Jinja y en app/stats.py eliminar
+    ROTATION_POOL_SIZE, los campos featured/rotation_pool de RutasData y
+    la query pool_rows + asignación al final de build_rutas().
+    En rutas.js eliminar las secciones FEATURED MAP, FEATURED ROTATION,
+    THEME SYNC para mini-mapa, y las llamadas initFeaturedMap() /
+    initFeaturedRotation() en el bloque ARRANQUE.
+  <!-- FEATURED -->
+  {% if data.featured %}
+  <section class="featured-section">
+    <div class="section-head">
+      <h2 class="section-title">Ruta destacada</h2>
+      <div class="section-meta" id="featured-meta">{{ data.featured.date }}</div>
+    </div>
+
+    <div class="featured-card" id="featured-card">
+      <div class="featured-content">
+        <div class="featured-tagline" id="featured-tagline">aleatoria · <span id="featured-region">{{ data.featured.region }}</span></div>
+        <h3 class="featured-title">
+          <span id="featured-name">{{ data.featured.name }}</span>
+          <span class="sub" id="featured-origin-wrap"{% if not data.featured.origin or data.featured.origin == '—' %} style="display:none;"{% endif %}>desde <span id="featured-origin">{{ data.featured.origin }}</span></span>
+        </h3>
+
+        <div class="featured-stats">
+          <div class="featured-stat">
+            <div class="l">distancia</div>
+            <div class="v tnum"><span id="featured-km">{{ data.featured.km | fmt_km }}</span><span class="u">km</span></div>
+          </div>
+          <div class="featured-stat">
+            <div class="l">desnivel +</div>
+            <div class="v tnum"><span id="featured-gain">{{ data.featured.gain | fmt_int }}</span><span class="u">m</span></div>
+          </div>
+          <div class="featured-stat">
+            <div class="l">tiempo</div>
+            <div class="v tnum" id="featured-time">{{ data.featured.time }}</div>
+          </div>
+          <div class="featured-stat">
+            <div class="l">dificultad</div>
+            <div class="v tnum" id="featured-score" style="color: var(--{{ data.featured.level }});">
+              {{ ('%.1f' % data.featured.score) | replace('.', ',') }}
+            </div>
+          </div>
+        </div>
+
+        <div class="featured-actions">
+          <a href="/rutas/{{ data.featured.id }}" class="btn-primary" id="featured-link-detail">
+            Abrir detalle
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M12 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+          <a href="/rutas/{{ data.featured.id }}/gpx" class="btn-ghost" id="featured-link-gpx">Exportar GPX</a>
+        </div>
+      </div>
+
+      <div class="featured-visual">
+        <svg class="featured-elev-svg" id="featured-elev" viewBox="0 0 800 200" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="feat-grad" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stop-color="currentColor" stop-opacity="0.5"/>
+              <stop offset="100%" stop-color="currentColor" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <g id="featured-elev-group" style="color: var(--{{ data.featured.level }});">
+            <path id="featured-elev-area" d="{{ data.featured.area }}" fill="url(#feat-grad)"/>
+            <path id="featured-elev-line" d="{{ data.featured.line }}" fill="none" stroke="currentColor" stroke-width="1" stroke-opacity="0.85"/>
+          </g>
+          <text id="featured-elev-range" x="14" y="22" font-family="IBM Plex Mono" font-size="9" fill="currentColor" style="color: var(--text-dim);" letter-spacing="0.12em">PERFIL · {{ data.featured.ele_min | fmt_int }}–{{ data.featured.ele_max | fmt_int }} m</text>
+          <text id="featured-elev-summary" x="786" y="22" text-anchor="end" font-family="IBM Plex Mono" font-size="9" fill="currentColor" style="color: var(--text-dim);" letter-spacing="0.12em">↗ {{ data.featured.gain | fmt_int }} m · {{ data.featured.km | fmt_km }} km</text>
+        </svg>
+        <div class="featured-mini-map">
+          <div id="featured-map"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+  HIDDEN-FEATURED-END
+  #}
+
+  <!-- FILTER BAR -->
+  <div class="filter-bar">
+
+    <div class="search-wrap">
+      <span class="search-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M21 21l-5-5"/></svg>
+      </span>
+      <input id="search-input" class="search-input" type="text" placeholder="Buscar ruta, origen o región…" autocomplete="off">
+      <span id="search-shortcut" class="search-shortcut">/</span>
+      <button id="search-clear" class="search-clear" aria-label="Limpiar búsqueda">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <!-- Filtros con popover -->
+    <div class="filter-trigger-wrap">
+      <button id="filters-trigger" class="filters-trigger" type="button" aria-haspopup="true" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M7 12h10M10 18h4" stroke-linecap="round"/></svg>
+        Filtros
+        <span id="filters-count" class="count-badge zero">0</span>
+      </button>
+
+      <div id="filters-popover" class="filters-popover" role="dialog" aria-label="Filtros avanzados">
+
+        <div class="pop-section">
+          <div class="pop-section-label">Dificultad</div>
+          <div class="pop-chips">
+            <button class="chip diff-easy active" data-filter="easy"><span class="dot"></span>Fácil</button>
+            <button class="chip diff-mod active" data-filter="moderate"><span class="dot"></span>Moderada</button>
+            <button class="chip diff-hard active" data-filter="hard"><span class="dot"></span>Difícil</button>
+            <button class="chip diff-vh active" data-filter="very-hard"><span class="dot"></span>Muy difícil</button>
+          </div>
+        </div>
+
+        <div class="pop-section">
+          <div class="pop-section-label">País</div>
+          <div class="ctrl-select-wrap">
+            <select class="ctrl-select" id="filter-country">
+              <option value="all">todos</option>
+              {% for facet in data.countries %}
+              <option value="{{ facet.key }}">{{ facet.label }} ({{ facet.count }})</option>
+              {% endfor %}
+            </select>
+            <span class="ctrl-select-chev"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span>
+          </div>
+        </div>
+
+        <div class="pop-section">
+          <div class="pop-section-label">Región</div>
+          <div class="ctrl-select-wrap">
+            <select class="ctrl-select" id="filter-region">
+              <option value="all">todas</option>
+              {% for facet in data.regions %}
+              <option value="{{ facet.key }}">{{ facet.label }} ({{ facet.count }})</option>
+              {% endfor %}
+            </select>
+            <span class="ctrl-select-chev"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span>
+          </div>
+        </div>
+
+        <div class="pop-section">
+          <div class="pop-section-label">Distancia</div>
+          <div class="ctrl-select-wrap">
+            <select class="ctrl-select" id="filter-distance">
+              <option value="all">cualquiera</option>
+              <option value="0-8">corta · &lt; 8 km</option>
+              <option value="8-12">media · 8 – 12 km</option>
+              <option value="12-16">larga · 12 – 16 km</option>
+              <option value="16-99">muy larga · &gt; 16 km</option>
+            </select>
+            <span class="ctrl-select-chev"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span>
+          </div>
+        </div>
+
+        <div class="pop-section">
+          <div class="pop-section-label">Desnivel +</div>
+          <div class="ctrl-select-wrap">
+            <select class="ctrl-select" id="filter-gain">
+              <option value="all">cualquiera</option>
+              <option value="0-700">suave · &lt; 700 m</option>
+              <option value="700-1100">medio · 700 – 1.100 m</option>
+              <option value="1100-1500">fuerte · 1.100 – 1.500 m</option>
+              <option value="1500-9999">épico · &gt; 1.500 m</option>
+            </select>
+            <span class="ctrl-select-chev"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="filter-group">
+      <span class="filter-label">Fecha</span>
+      <div class="ctrl-select-wrap">
+        <select class="ctrl-select" id="filter-date">
+          <option value="all">cualquier fecha</option>
+          {% if data.year_max %}<option value="{{ data.year_max }}">{{ data.year_max }}</option>{% endif %}
+          {% if data.year_min and data.year_min != data.year_max %}<option value="{{ data.year_min }}">{{ data.year_min }}</option>{% endif %}
+          <option value="last-90">últimos 90 días</option>
+          <option value="last-365">último año</option>
+          <option value="summer">verano (jun–sep)</option>
+          <option value="winter">invierno (dic–feb)</option>
+        </select>
+        <span class="ctrl-select-chev"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span>
+      </div>
+    </div>
+
+    <div class="filter-group">
+      <span class="filter-label">Ordenar</span>
+      <div class="ctrl-select-wrap">
+        <select class="ctrl-select" id="sort-select">
+          <option value="date-desc">fecha · más reciente</option>
+          <option value="date-asc">fecha · más antigua</option>
+          <option value="km-desc">distancia · mayor</option>
+          <option value="km-asc">distancia · menor</option>
+          <option value="gain-desc">desnivel · mayor</option>
+          <option value="gain-asc">desnivel · menor</option>
+          <option value="score-desc">dificultad · mayor</option>
+        </select>
+        <span class="ctrl-select-chev"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span>
+      </div>
+    </div>
+
+    <div class="filter-spacer"></div>
+
+    <div class="filter-stats" id="filter-stats">
+      <span class="v">{{ data.total }}</span> de {{ data.total }}
+    </div>
+
+    <button id="reset-filters" class="reset-btn hidden" title="Limpiar todos los filtros">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Limpiar
+    </button>
+  </div>
+
+  <!-- ROUTES LIST -->
+  <section class="routes-section">
+    <div class="section-head">
+      <h2 class="section-title">Todas las rutas</h2>
+      <div class="section-meta" id="routes-count">{{ data.total }} {{ 'ruta' if data.total == 1 else 'rutas' }} · ordenadas por fecha</div>
+    </div>
+
+    <div class="routes-list" id="routes-list"></div>
+
+    <div class="empty-state" id="empty-state" style="display:none;">
+      ningún resultado coincide con los filtros activos
+    </div>
+
+    <div class="routes-sentinel" id="routes-sentinel" style="display:none;">
+      cargando más rutas <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    </div>
+  </section>
+
+{% endif %}
+
+{% endblock %}
+
+{% block scripts_extra %}
+{% if data.has_data %}
+<script>
+  {#
+    HIDDEN-FEATURED-START (scripts_extra)
+    TODO-ELIMINAR: featuredId y rotationPool. Si se elimina la sección
+    featured, dejar solo { total, todayISO } y actualizar la
+    desestructuración de window.MENDI_RUTAS en rutas.js.
+  #}
+  window.MENDI_RUTAS = {
+    total: {{ data.total }},
+    featuredId: null,
+    rotationPool: [],
+    todayISO: {{ '%04d-%02d-%02d' | format(now.year, now.month, now.day) | tojson }}
+  };
+  {# HIDDEN-FEATURED-END #}
+</script>
+{# rutas.js se carga globalmente desde base.html #}
+{% endif %}
+{% endblock %}

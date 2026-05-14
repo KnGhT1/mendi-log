@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+{% if csrf_token %}<meta name="csrf-token" content="{{ csrf_token }}">{% endif %}
+<script>
+  // Bootstrap de tema sincrono — evita el "guino" oscuro al cargar paginas
+  // en tema claro. Debe ejecutarse antes de que el navegador resuelva los
+  // selectores CSS basados en data-theme.
+  (function () {
+    try {
+      var t = localStorage.getItem("mendi.theme") || "dark";
+      if (t !== "light" && t !== "dark") t = "dark";
+      document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  })();
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}mendi.log{% endblock %}</title>
+
+<!-- ============================================================
+     Tipografía y librerías 100% locales (servidas desde /static).
+     - Las descarga scripts/download_assets.py en el primer arranque.
+     - Cache-Control immutable en /static (ver app/main.py) → tras la 1ª
+       visita el navegador no las pide más, eliminando el FOUT.
+     - <link rel=preload> empuja al browser a buscarlas antes de parsear
+       el CSS, así no hay un "saltito" de fuente del sistema → fuente
+       definitiva en la primera carga.
+     ============================================================ -->
+<link rel="preload" as="font" type="font/woff2" href="{{ url_for('static', path='fonts/ibm-plex-sans-400.woff2') }}" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="{{ url_for('static', path='fonts/ibm-plex-mono-400.woff2') }}" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="{{ url_for('static', path='fonts/fraunces-400.woff2') }}" crossorigin>
+
+<link rel="stylesheet" href="{{ url_for('static', path='vendor/leaflet.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', path='css/detail.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', path='css/analisis.css') }}">
+
+<!-- HTMX y Leaflet locales. Cargados con defer para no bloquear render. -->
+<script src="{{ url_for('static', path='vendor/htmx.min.js') }}" defer></script>
+<script src="{{ url_for('static', path='vendor/leaflet.js') }}" defer></script>
+<script src="{{ url_for('static', path='vendor/leaflet-heat.js') }}" defer></script>
+
+<!-- Scripts de la app: globales para sobrevivir a los swaps de HTMX.
+     Cada uno se autoexpone como window.MENDI_PAGES.<nombre> y el
+     dispatcher de app.js los ejecuta según el data-page del <main>. -->
+<script src="{{ url_for('static', path='js/app.js') }}" defer></script>
+<script src="{{ url_for('static', path='js/rutas.js') }}" defer></script>
+<script src="{{ url_for('static', path='js/detail.js') }}" defer></script>
+<script src="{{ url_for('static', path='js/analisis.js') }}" defer></script>
+<script src="{{ url_for('static', path='js/admin_usuarios.js') }}" defer></script>
+
+{% block head_extra %}{% endblock %}
+</head>
+<!-- hx-boost: HTMX intercepta los <a> y hace swap del .app sin recargar
+     <head>. Las fuentes y CSS persisten → no hay FOUT al navegar.
+     hx-target=#hx-root + hx-select=#hx-root → solo intercambia el
+     contenedor principal, dejando intacto el resto del documento. -->
+<body hx-boost="true" hx-target="#hx-root" hx-select="#hx-root" hx-swap="outerHTML show:window:top">
+<div id="hx-page-progress" class="page-progress"></div>
+<div id="hx-root" class="app" data-page="{% block page_id %}{{ active_nav }}{% endblock %}">
+
+  <!-- Overlay para cerrar sidebar en móvil -->
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <!-- ========= SIDEBAR ========= -->
+  <aside class="sidebar" id="sidebar">
+    <a href="/" style="text-decoration:none; color:inherit;">
+      <div class="brand">
+        <div class="brand-mark">M</div>
+        <div class="brand-name">mendi.log</div>
+      </div>
+    </a>
+
+    <a href="/" class="nav-item {% if active_nav == 'resumen' %}active{% endif %}">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12l9-9 9 9M5 10v10h14V10" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Resumen
+    </a>
+    <a href="/rutas" class="nav-item {% if active_nav == 'rutas' %}active{% endif %}">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6zM9 3v15M15 6v15" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Rutas
+    </a>
+    <a href="/analisis" class="nav-item {% if active_nav == 'analisis' %}active{% endif %}">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 20h18M5 20V10M9 20V4M13 20v-7M17 20v-4M21 20v-9" stroke-linecap="round"/></svg>
+      Análisis
+    </a>
+    {% if current_user and current_user.role in ("admin", "user") %}
+    <a href="/importar" class="nav-item {% if active_nav == 'importar' %}active{% endif %}">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 4v12m-5-5l5-5 5 5M5 20h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Importar
+    </a>
+    {% endif %}
+
+    {% if current_user and current_user.role == "admin" %}
+    <a href="/admin/usuarios" class="nav-item {% if active_nav == 'admin-usuarios' %}active{% endif %}">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Usuarios
+    </a>
+    {% endif %}
+
+    <div class="sidebar-footer">
+      v0.1 · 100% local<br>
+      <span style="color:var(--accent);">●</span> SQLite OK
+    </div>
+  </aside>
+
+  <!-- ========= MAIN ========= -->
+  <main class="main">
+
+    <div class="topbar">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <!-- Botón hamburguesa (solo visible en móvil) -->
+        <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Abrir menú" aria-expanded="false" aria-controls="sidebar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/></svg>
+        </button>
+        <div class="breadcrumb">
+          ~/mendi <span class="sep">/</span> <span class="current">{% block breadcrumb %}{{ active_nav }}{% endblock %}</span>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        {% block topbar_extra %}{% endblock %}
+
+        {% if current_user %}
+        <span class="user-name" title="{{ current_user.email }}">{{ current_user.display_name or current_user.email }}</span>
+        <span class="role-chip role-{{ current_user.role }}" title="Rol: {{ current_user.role }}">{{ current_user.role }}</span>
+        {% endif %}
+
+        <!-- Theme toggle -->
+        <button id="theme-toggle" class="topbar-btn" title="Cambiar tema (claro / oscuro)" aria-label="Cambiar tema">
+          <svg id="theme-icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke-linejoin="round"/></svg>
+          <svg id="theme-icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" style="display:none;"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" stroke-linecap="round"/></svg>
+        </button>
+
+        {% if current_user %}
+        <!-- Cerrar sesión: hx-boost="false" → el navegador hace el POST y
+             sigue el 303 con recarga completa. Sin esto HTMX intenta swap
+             de #hx-root, que no existe en login.html (standalone), y la
+             página queda en blanco hasta que el usuario refresca. -->
+        <form method="POST" action="/logout" hx-boost="false" style="display:inline;">
+          <button type="submit" class="topbar-btn" title="Cerrar sesión ({{ current_user.email }})" aria-label="Cerrar sesión">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+
+    {% block content %}{% endblock %}
+
+    <div class="footnote">
+      <span>{% block footnote_text %}mendi.log · 100% local{% endblock %}</span>
+      <span class="demo-badge">v0.1</span>
+    </div>
+  </main>
+
+  {# Hidratación de datos por página (window.MENDI_DETAIL, MENDI_RUTAS, ...).
+     IMPORTANTE: va DENTRO de #hx-root para que HTMX la copie en cada swap.
+     Si estuviera fuera, hx-select="#hx-root" la descartaría y el init de la
+     página leería datos viejos del documento anterior. #}
+  {% block scripts_extra %}{% endblock %}
+
+  <script>
+  // CSRF: inyecta el token leído del <meta name="csrf-token"> en TODAS las
+  // peticiones HTMX y fetch() del frontend. El backend valida con
+  // hmac.compare_digest contra el HMAC de la sesión.
+  (function () {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    var token = meta ? meta.getAttribute('content') : '';
+    if (!token) return;
+    document.body.addEventListener('htmx:configRequest', function (evt) {
+      evt.detail.headers['X-CSRF-Token'] = token;
+    });
+    var origFetch = window.fetch;
+    window.fetch = function (input, init) {
+      init = init || {};
+      var method = (init.method || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
+      if (method !== 'GET' && method !== 'HEAD') {
+        init.headers = new Headers(init.headers || {});
+        if (!init.headers.has('X-CSRF-Token')) {
+          init.headers.set('X-CSRF-Token', token);
+        }
+      }
+      return origFetch.call(this, input, init);
+    };
+  })();
+  (function () {
+    var toggle = document.getElementById('sidebar-toggle');
+    var sidebar = document.getElementById('sidebar');
+    var overlay = document.getElementById('sidebar-overlay');
+    if (!toggle || !sidebar || !overlay) return;
+    function open() {
+      sidebar.classList.add('is-open');
+      overlay.classList.add('is-open');
+      toggle.setAttribute('aria-expanded', 'true');
+      document.body.style.overflow = 'hidden';
+    }
+    function close() {
+      sidebar.classList.remove('is-open');
+      overlay.classList.remove('is-open');
+      toggle.setAttribute('aria-expanded', 'false');
+      document.body.style.overflow = '';
+    }
+    toggle.addEventListener('click', function () {
+      sidebar.classList.contains('is-open') ? close() : open();
+    });
+    overlay.addEventListener('click', close);
+    // Cerrar al navegar (HTMX swap)
+    document.body.addEventListener('htmx:afterSwap', close);
+  })();
+  </script>
+</div>
+
+</body>
+</html>

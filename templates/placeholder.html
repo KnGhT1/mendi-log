@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} · mendi.log{% endblock %}
+{% block breadcrumb %}{{ active_nav }}{% endblock %}
+
+{% block footnote_text %}mendi.log · {{ active_nav }}{% endblock %}
+
+{% block content %}
+<div class="empty">
+  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+    <circle cx="12" cy="12" r="9"/>
+    <path d="M12 7v5l3 2" stroke-linecap="round"/>
+  </svg>
+  <h3>{{ title }}</h3>
+  <p>{{ subtitle }}</p>
+  {% if count is not none %}
+  <p style="font-family:var(--mono); font-size:11.5px; color:var(--text-dim); margin-top:-12px;">
+    {{ count }} {{ 'registro' if count == 1 else 'registros' }} en base de datos
+  </p>
+  {% endif %}
+  <a href="/" class="btn btn-ghost">Volver al resumen</a>
+</div>
+{% endblock %}

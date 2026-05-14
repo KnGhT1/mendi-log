@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Usuarios · mendi.log{% endblock %}
+{% block breadcrumb %}admin <span class="sep">/</span> <span class="current">usuarios</span>{% endblock %}
+{% block footnote_text %}mendi.log · gestión de usuarios{% endblock %}
+
+{% block content %}
+
+<div class="admin-wrap">
+
+<section class="page-head">
+  <div class="page-head-grid"></div>
+  <div class="page-head-content">
+    <div>
+      <div class="page-eyebrow">administración</div>
+      <h1 class="page-title">Usua<em>rios</em></h1>
+      <div class="page-meta">
+        <div><span class="v">{{ users|length }}</span><span class="l">usuario{{ '' if users|length == 1 else 's' }}</span></div>
+        <div><span class="v">{{ users|selectattr('role','equalto','admin')|list|length }}</span><span class="l">admin</span></div>
+        <div><span class="v">{{ users|selectattr('role','equalto','user')|list|length }}</span><span class="l">user</span></div>
+        <div><span class="v">{{ users|selectattr('role','equalto','viewer')|list|length }}</span><span class="l">viewer</span></div>
+      </div>
+    </div>
+    <div class="page-head-actions">
+      <button id="btn-new-user" class="ctrl primary" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>
+        Nuevo usuario
+      </button>
+    </div>
+  </div>
+</section>
+
+<div id="admin-flash" class="flash" style="display:none;"></div>
+
+<section class="section">
+  <div class="users-table">
+    <div class="users-row users-head">
+      <div class="cell email">email</div>
+      <div class="cell name">nombre</div>
+      <div class="cell role">rol</div>
+      <div class="cell state">estado</div>
+      <div class="cell login">último login</div>
+      <div class="cell actions">acciones</div>
+    </div>
+
+    {% for u in users %}
+    <div class="users-row" data-user-id="{{ u.id }}" data-email="{{ u.email }}">
+      <div class="cell email">
+        {{ u.email }}
+        {% if u.id == current_user.id %}<span class="users-self">(tú)</span>{% endif %}
+      </div>
+      <div class="cell name">
+        <input type="text"
+               class="users-name-input"
+               data-action="set-name"
+               value="{{ u.display_name or '' }}"
+               maxlength="120"
+               placeholder="—"
+               aria-label="Nombre del usuario">
+      </div>
+      <div class="cell role">
+        <select class="users-role-select" data-action="set-role">
+          <option value="admin"  {% if u.role == 'admin'  %}selected{% endif %}>admin</option>
+          <option value="user"   {% if u.role == 'user'   %}selected{% endif %}>user</option>
+          <option value="viewer" {% if u.role == 'viewer' %}selected{% endif %}>viewer</option>
+        </select>
+      </div>
+      <div class="cell state">
+        <button class="users-state-toggle {% if u.is_active %}active{% else %}inactive{% endif %}" data-action="toggle-active" data-active="{{ '1' if u.is_active else '0' }}" type="button">
+          <span class="dot"></span>{{ 'activo' if u.is_active else 'inactivo' }}
+        </button>
+      </div>
+      <div class="cell login">
+        {% if u.last_login_at %}{{ u.last_login_at[:10] }}{% else %}<span class="muted">—</span>{% endif %}
+      </div>
+      <div class="cell actions">
+        <button class="note-btn" data-action="reset-password" type="button" title="Restablecer contraseña">password</button>
+        <button class="note-btn danger" data-action="delete" type="button" title="Eliminar usuario" {% if u.id == current_user.id %}disabled{% endif %}>eliminar</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+</div>
+
+<!-- ===== Modal nuevo usuario ===== -->
+<div class="modal-backdrop" id="new-user-modal" style="display:none;">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Nuevo usuario</h3>
+    </div>
+    <div class="modal-body">
+      <label class="modal-label">Email</label>
+      <input type="email" class="modal-input" id="new-email" maxlength="200" placeholder="usuario@dominio.com">
+
+      <label class="modal-label">Nombre (opcional)</label>
+      <input type="text" class="modal-input" id="new-name" maxlength="120" placeholder="Para mostrar">
+
+      <label class="modal-label">Rol</label>
+      <select class="modal-input" id="new-role">
+        <option value="user" selected>user — puede importar y editar</option>
+        <option value="admin">admin — gestión de usuarios</option>
+        <option value="viewer">viewer — solo lectura</option>
+      </select>
+
+      <label class="modal-label">Contraseña (mín. 12 caracteres)</label>
+      <input type="password" class="modal-input" id="new-password" minlength="12" maxlength="200">
+
+      <label class="modal-label">Repite contraseña</label>
+      <input type="password" class="modal-input" id="new-password2" minlength="12" maxlength="200">
+
+      <p class="modal-hint" id="new-error" style="display:none; color:var(--danger);"></p>
+    </div>
+    <div class="modal-actions">
+      <button class="note-btn ghost" id="new-cancel" type="button">cancelar</button>
+      <button class="note-btn primary" id="new-confirm" type="button">crear</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Modal reset password ===== -->
+<div class="modal-backdrop" id="pw-modal" style="display:none;">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Restablecer contraseña</h3>
+    </div>
+    <div class="modal-body">
+      <p>Usuario: <strong id="pw-email"></strong></p>
+      <label class="modal-label">Nueva contraseña (mín. 12 caracteres)</label>
+      <input type="password" class="modal-input" id="pw-password" minlength="12" maxlength="200">
+      <label class="modal-label">Repite contraseña</label>
+      <input type="password" class="modal-input" id="pw-password2" minlength="12" maxlength="200">
+      <p class="modal-hint" id="pw-error" style="display:none; color:var(--danger);"></p>
+    </div>
+    <div class="modal-actions">
+      <button class="note-btn ghost" id="pw-cancel" type="button">cancelar</button>
+      <button class="note-btn primary" id="pw-confirm" type="button">guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Modal confirmar eliminar ===== -->
+<div class="modal-backdrop" id="del-modal" style="display:none;">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Eliminar usuario</h3>
+    </div>
+    <div class="modal-body">
+      <p>¿Seguro que quieres eliminar a <strong id="del-email"></strong>?</p>
+      <p class="modal-warn">Se borrarán también todas sus rutas, puntos GPX y archivos en disco.<br>Esta acción no se puede deshacer.</p>
+    </div>
+    <div class="modal-actions">
+      <button class="note-btn ghost" id="del-cancel" type="button">cancelar</button>
+      <button class="note-btn danger" id="del-confirm" type="button">eliminar</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts_extra %}
+{# admin_usuarios.js se carga globalmente desde base.html para sobrevivir
+   a los swaps de HTMX. Aquí solo hidratamos la config por página. #}
+<script>
+window.MENDI_ADMIN_USERS = { selfId: {{ current_user.id }} };
+</script>
+{% endblock %}

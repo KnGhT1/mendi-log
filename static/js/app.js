@@ -1,0 +1,806 @@
+// ============================================================
+// mendi.log - cliente principal
+// ------------------------------------------------------------
+//   1. Dispatcher de páginas (compatible con HTMX hx-boost)
+//      Cuando navegamos entre menús, htmx hace swap de #hx-root
+//      sin recargar el <head> → fuentes y CSS persisten,
+//      desaparece el FOUT.
+//      Cada módulo de página se registra en window.MENDI_PAGES
+//      y el dispatcher llama a init() / teardown() al cambiar
+//      de página.
+//
+//   2. Toggle de tema con event delegation, para que sobreviva
+//      a los swaps (el botón es un nodo nuevo cada vez).
+//
+//   3. Indicador de progreso superior conectado a los eventos
+//      htmx:beforeRequest / htmx:afterRequest.
+//
+//   4. Página "resumen": mapa, charts, rotación de siluetas,
+//      edición inline. Toda la data viene en window.MENDI.
+// ============================================================
+(function () {
+  "use strict";
+
+  // ============ Constantes ============
+  const STORAGE_THEME = "mendi.theme";
+  const STORAGE_INTERVAL = "mendi.rotInterval";
+
+  // ============ Registro global ============
+  window.MENDI_PAGES = window.MENDI_PAGES || {};
+  // Pila de teardowns activos. Cada módulo de página apila aquí sus
+  // funciones de limpieza (intervals, mapas Leaflet, observers...).
+  // El dispatcher las ejecuta antes de inicializar la siguiente página.
+  window.MENDI_TEARDOWN = window.MENDI_TEARDOWN || [];
+
+  /**
+   * Ejecuta y vacía la pila de funciones de limpieza registradas en
+   * `window.MENDI_TEARDOWN`. Se llama antes de inicializar cada página
+   * nueva para destruir mapas Leaflet, intervals y observers del módulo
+   * anterior sin dejar fugas de memoria.
+   */
+  function runTeardowns() {
+    while (window.MENDI_TEARDOWN.length) {
+      const fn = window.MENDI_TEARDOWN.pop();
+      try { fn(); } catch (e) { /* ignore */ }
+    }
+  }
+
+  // ============ Tema (event delegation, persiste tras swaps) ============
+  /**
+   * Aplica el tema visual (`"dark"` | `"light"`) al documento:
+   * - Escribe `data-theme` en `<html>`.
+   * - Alterna los iconos luna/sol del botón.
+   * - Notifica a los módulos de mapa y charts que deben re-pintarse.
+   * - Emite el evento `mendi:themechange` para que otros módulos reaccionen.
+   * Expuesta como `window.applyTheme` para uso desde otros módulos.
+   * @param {"dark"|"light"} theme
+   */
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    const moon = document.getElementById("theme-icon-moon");
+    const sun = document.getElementById("theme-icon-sun");
+    if (moon && sun) {
+      moon.style.display = theme === "dark" ? "none" : "inline";
+      sun.style.display = theme === "dark" ? "inline" : "none";
+    }
+    // Refresca elementos dependientes del tema si están presentes
+    if (typeof window.updateMapTiles === "function") window.updateMapTiles();
+    if (typeof window.renderMonthlyChart === "function") window.renderMonthlyChart();
+    if (typeof window.renderWeekdayChart === "function") window.renderWeekdayChart();
+    if (typeof window.renderSeasonalityChart === "function") window.renderSeasonalityChart();
+    document.dispatchEvent(new CustomEvent("mendi:themechange", { detail: { theme } }));
+  }
+  window.applyTheme = applyTheme;
+
+  /**
+   * Sincroniza los iconos luna/sol con el tema actualmente almacenado en
+   * `data-theme`. Se llama en cada `dispatch()` para que los iconos sean
+   * correctos tras un swap de HTMX (el botón es un nodo nuevo cada vez).
+   */
+  function refreshThemeIcons() {
+    const t = document.documentElement.getAttribute("data-theme") || "dark";
+    const moon = document.getElementById("theme-icon-moon");
+    const sun = document.getElementById("theme-icon-sun");
+    if (moon && sun) {
+      moon.style.display = t === "dark" ? "none" : "inline";
+      sun.style.display = t === "dark" ? "inline" : "none";
+    }
+  }
+
+  // El listener vive en document, así que sobrevive a cualquier swap.
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("#theme-toggle");
+    if (!btn) return;
+    const cur = document.documentElement.getAttribute("data-theme") || "dark";
+    const next = cur === "dark" ? "light" : "dark";
+    try { localStorage.setItem(STORAGE_THEME, next); } catch (_) {}
+    applyTheme(next);
+  });
+
+  // ============ Indicador de progreso (htmx) ============
+  document.body && bindProgress();
+  /**
+   * Conecta los eventos `htmx:beforeRequest` / `htmx:afterRequest` al
+   * indicador de progreso superior (`#hx-page-progress`). Se llama una
+   * sola vez al cargar el script; el listener vive en `document.body` y
+   * sobrevive a los swaps de HTMX.
+   */
+  function bindProgress() {
+    const target = document.body;
+    target.addEventListener("htmx:beforeRequest", () => {
+      const p = document.getElementById("hx-page-progress");
+      if (p) { p.classList.remove("done"); p.classList.add("active"); }
+    });
+    target.addEventListener("htmx:afterRequest", () => {
+      const p = document.getElementById("hx-page-progress");
+      if (!p) return;
+      p.classList.remove("active");
+      p.classList.add("done");
+      setTimeout(() => p.classList.remove("done"), 500);
+    });
+  }
+
+  // ============ Dispatcher ============
+  /**
+   * Núcleo del sistema de páginas. Lee el atributo `data-page` de
+   * `#hx-root`, ejecuta los teardowns del módulo anterior y llama a
+   * `init()` del módulo registrado en `window.MENDI_PAGES[page]`.
+   * Se invoca en `DOMContentLoaded` y en cada `htmx:afterSwap` del
+   * contenedor principal.
+   */
+  function dispatch() {
+    refreshThemeIcons();
+    const root = document.getElementById("hx-root");
+    if (!root) return;
+    const page = root.getAttribute("data-page");
+    runTeardowns();
+    const mod = window.MENDI_PAGES[page];
+    if (mod && typeof mod.init === "function") {
+      try { mod.init(); } catch (err) { console.error("[mendi] init error", page, err); }
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", dispatch);
+  document.body && document.body.addEventListener("htmx:afterSwap", (evt) => {
+    // Solo nos interesa el swap principal del shell.
+    if (evt.detail && evt.detail.target && evt.detail.target.id === "hx-root") {
+      dispatch();
+    }
+  });
+
+  // ============ utils ============
+  /**
+   * Escapa los caracteres especiales HTML de una cadena para interpolación
+   * segura en innerHTML. Expuesta en `window.MENDI_UTIL.escapeHtml`.
+   * @param {*} s  Valor a escapar (se convierte a string).
+   * @returns {string}
+   */
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+  }
+  window.MENDI_UTIL = { escapeHtml };
+
+  // Convierte un ISO UTC ("2025-06-30T23:30:00Z") a fecha local del navegador
+  // con formato "30 jun 2025". Fallback al string original si falla.
+  const MONTH_ES = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  /**
+   * Convierte un string ISO UTC (p.ej. `"2025-06-30T23:30:00Z"`) a fecha
+   * local del navegador con formato `"30 jun 2025"`. Si la conversión
+   * falla devuelve el string original. Expuesta en
+   * `window.MENDI_UTIL.fmtDateLocal`.
+   * @param {string} iso
+   * @returns {string}
+   */
+  function fmtDateLocal(iso) {
+    if (!iso) return "";
+    try {
+      const d = new Date(iso);
+      return `${String(d.getDate()).padStart(2,"0")} ${MONTH_ES[d.getMonth()]} ${d.getFullYear()}`;
+    } catch (_) { return iso; }
+  }
+  window.MENDI_UTIL.fmtDateLocal = fmtDateLocal;
+
+  // Devuelve "YYYY-MM-DD" en hora local (para agrupar por día en calendarios).
+  /**
+   * Devuelve `"YYYY-MM-DD"` en hora local del navegador a partir de un
+   * string ISO. Se usa para agrupar actividades por día local en los
+   * calendarios heatmap, evitando que rutas de tarde aparezcan en el día
+   * siguiente por el desfase UTC. Expuesta en
+   * `window.MENDI_UTIL.localDateKey`.
+   * @param {string} iso
+   * @returns {string}
+   */
+  function localDateKey(iso) {
+    if (!iso) return "";
+    try {
+      const d = new Date(iso);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    } catch (_) { return iso.slice(0, 10); }
+  }
+  window.MENDI_UTIL.localDateKey = localDateKey;
+
+  /**
+   * Lee el valor de una CSS custom property del elemento raíz.
+   * @param {string} name  Nombre de la variable, p.ej. `"--accent"`.
+   * @returns {string}
+   */
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  // ============================================================
+  //  Página "resumen"
+  // ============================================================
+  let map = null;
+  let darkTiles, lightTiles, darkLabels, lightLabels;
+  let currentProfileIdx = -1;
+  let rotationTimer = null;
+
+  /**
+   * Oculta el overlay de carga del mapa resumen (`#map-loading`) con una
+   * transición CSS de 400 ms antes de retirar el nodo del flujo.
+   */
+  function hideMapLoading() {
+    const ov = document.getElementById("map-loading");
+    if (!ov) return;
+    ov.classList.add("hidden");
+    setTimeout(() => { ov.style.display = "none"; }, 400);
+  }
+
+  /**
+   * Punto de entrada para el mapa de la vista Resumen. Espera a que el
+   * contenedor `#map` tenga dimensiones reales mediante `ResizeObserver`
+   * antes de llamar a `_buildMap`, evitando que Leaflet cachee altura 0
+   * tras un swap de HTMX. Registra el teardown del observer en
+   * `window.MENDI_TEARDOWN`.
+   */
+  function initMap() {
+    const el = document.getElementById("map");
+    if (!el || typeof L === "undefined") {
+      hideMapLoading();
+      return;
+    }
+    const MENDI = window.MENDI || {};
+    const routes = MENDI.routes || [];
+
+    // Esperar a que el contenedor tenga dimensiones reales antes de
+    // inicializar Leaflet. Tras un swap de HTMX el navegador puede no
+    // haber resuelto el layout todavía cuando L.map() mide el elemento.
+    const ro = new ResizeObserver((entries, observer) => {
+      const h = entries[0].contentRect.height;
+      if (h < 10) return;
+      observer.disconnect();
+      _buildMap(el, routes);
+    });
+    ro.observe(el);
+    window.MENDI_TEARDOWN.push(() => { try { ro.disconnect(); } catch (_) {} });
+
+    const fallback = setTimeout(() => { ro.disconnect(); _buildMap(el, routes); }, 800);
+    window.MENDI_TEARDOWN.push(() => clearTimeout(fallback));
+  }
+
+  /**
+   * Construye el mapa Leaflet de la vista Resumen: capas de teselas
+   * oscuras/claras, marcadores proporcionales a la distancia coloreados
+   * por dificultad y popups con nombre, km y fecha. Ajusta los bounds si
+   * hay más de un punto. Registra el teardown del mapa en
+   * `window.MENDI_TEARDOWN`.
+   * @param {HTMLElement} el      Contenedor del mapa.
+   * @param {Array<object>} routes  Array de rutas con `lat`, `lon`, `km`,
+   *                                `level`, `name`, `gain`, `score`.
+   */
+  function _buildMap(el, routes) {
+    if (map) return; // ya inicializado
+
+    const initialView = routes.length ? [routes[0].lat, routes[0].lon] : [42.78, -0.85];
+    const initialZoom = routes.length === 1 ? 11 : (routes.length ? 8 : 6);
+
+    map = L.map(el, {
+      zoomControl: true,
+      attributionControl: true,
+      scrollWheelZoom: true,
+    }).setView(initialView, initialZoom);
+
+    darkTiles = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png", {
+      attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18
+    });
+    darkLabels = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", {
+      pane: "shadowPane", maxZoom: 18
+    });
+    lightTiles = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
+      attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18
+    });
+    lightLabels = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png", {
+      pane: "shadowPane", maxZoom: 18
+    });
+
+    const lvlColors = { easy: "#7DAFC9", moderate: "#B5D17A", hard: "#E8B86D", "very-hard": "#E47862" };
+    const bounds = [];
+    routes.forEach(r => {
+      const color = lvlColors[r.level] || lvlColors.moderate;
+      const radius = 6 + r.km * 0.6;
+      const marker = L.circleMarker([r.lat, r.lon], {
+        radius, color, fillColor: color, fillOpacity: 0.45, weight: 2
+      }).addTo(map);
+      marker.bindPopup(`
+        <div style="font-family: 'IBM Plex Sans', sans-serif; min-width: 180px;">
+          <div style="font-family: Fraunces, serif; font-size: 14px; font-weight:500; margin-bottom: 8px;">${escapeHtml(r.name)}</div>
+          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; opacity:0.75; line-height:1.7;">
+            <div>${r.km.toFixed(2)} km · ${r.gain} m+</div>
+            <div>dificultad ${r.score.toFixed(1)} · ${escapeHtml(fmtDateLocal(r.started_at_iso) || r.date_str)}</div>
+          </div>
+        </div>
+      `);
+      bounds.push([r.lat, r.lon]);
+    });
+    if (bounds.length >= 2) {
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 9 });
+    }
+    updateMapTiles();
+    hideMapLoading();
+
+    window.MENDI_TEARDOWN.push(() => {
+      try { if (map) map.remove(); } catch (_) {}
+      map = null;
+      darkTiles = lightTiles = darkLabels = lightLabels = undefined;
+    });
+  }
+
+  /**
+   * Intercambia las capas de teselas del mapa resumen según el tema
+   * activo (`dark` / `light`). Expuesta como `window.updateMapTiles` para
+   * que `applyTheme` pueda llamarla desde cualquier módulo.
+   */
+  function updateMapTiles() {
+    if (!map) return;
+    const theme = document.documentElement.getAttribute("data-theme");
+    if (theme === "dark") {
+      if (map.hasLayer(lightTiles)) map.removeLayer(lightTiles);
+      if (map.hasLayer(lightLabels)) map.removeLayer(lightLabels);
+      if (!map.hasLayer(darkTiles)) darkTiles.addTo(map);
+      if (!map.hasLayer(darkLabels)) darkLabels.addTo(map);
+    } else {
+      if (map.hasLayer(darkTiles)) map.removeLayer(darkTiles);
+      if (map.hasLayer(darkLabels)) map.removeLayer(darkLabels);
+      if (!map.hasLayer(lightTiles)) lightTiles.addTo(map);
+      if (!map.hasLayer(lightLabels)) lightLabels.addTo(map);
+    }
+  }
+  window.updateMapTiles = updateMapTiles;
+
+  // ============ Monthly chart ============
+  /**
+   * Renderiza el gráfico SVG de kilómetros por mes (`#chart-monthly`).
+   * Dibuja área degradada, línea y puntos con etiquetas para los últimos
+   * 14 meses. Los datos vienen de `window.MENDI.months`. Expuesta como
+   * `window.renderMonthlyChart` para re-pintarse al cambiar el tema.
+   */
+  function renderMonthlyChart() {
+    const svg = document.getElementById("chart-monthly");
+    if (!svg) return;
+    const MENDI = window.MENDI || {};
+    const months = MENDI.months || [];
+    if (!months.length) { svg.innerHTML = ""; return; }
+
+    const W = 600, H = 180;
+    const PAD_L = 36, PAD_R = 16, PAD_T = 18, PAD_B = 26;
+    const innerW = W - PAD_L - PAD_R;
+    const innerH = H - PAD_T - PAD_B;
+    const maxV = Math.max(...months.map(m => m.v), 16);
+    const xStep = innerW / Math.max(1, months.length - 1);
+
+    const cAccent = cssVar("--accent");
+    const cBorder = cssVar("--border");
+    const cDim = cssVar("--text-dim");
+    const cText = cssVar("--text");
+    const cBg = cssVar("--surface");
+
+    let html = "";
+
+    [0, 5, 10, 15].forEach(g => {
+      const y = PAD_T + innerH - (g / maxV) * innerH;
+      html += `<line x1="${PAD_L}" x2="${W - PAD_R}" y1="${y}" y2="${y}" stroke="${cBorder}" stroke-width="0.8" stroke-dasharray="2 4"/>`;
+      html += `<text x="${PAD_L - 8}" y="${y + 3}" text-anchor="end" font-family="IBM Plex Mono" font-size="9" fill="${cDim}">${g}</text>`;
+    });
+
+    let path = "", area = "";
+    months.forEach((p, i) => {
+      const x = PAD_L + i * xStep;
+      const y = PAD_T + innerH - (p.v / maxV) * innerH;
+      path += (i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`);
+      if (i === 0) area = `M ${x} ${PAD_T + innerH} L ${x} ${y}`;
+      else area += ` L ${x} ${y}`;
+    });
+    area += ` L ${PAD_L + (months.length - 1) * xStep} ${PAD_T + innerH} Z`;
+
+    const gradId = "m-grad-" + Math.random().toString(36).slice(2, 7);
+    html += `<defs><linearGradient id="${gradId}" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0%" stop-color="${cAccent}" stop-opacity="0.35"/>
+        <stop offset="100%" stop-color="${cAccent}" stop-opacity="0"/>
+      </linearGradient></defs>`;
+    html += `<path d="${area}" fill="url(#${gradId})"/>`;
+    html += `<path d="${path}" fill="none" stroke="${cAccent}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>`;
+
+    months.forEach((p, i) => {
+      const x = PAD_L + i * xStep;
+      const y = PAD_T + innerH - (p.v / maxV) * innerH;
+      if (p.v > 0) {
+        html += `<circle cx="${x}" cy="${y}" r="3.5" fill="${cBg}" stroke="${cAccent}" stroke-width="1.6"/>`;
+        html += `<text x="${x}" y="${y - 9}" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="${cText}">${p.v.toFixed(1)}</text>`;
+      }
+      if (i % 2 === 0) {
+        html += `<text x="${x}" y="${H - 8}" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="${cDim}" letter-spacing="0.05em">${p.m}</text>`;
+      }
+    });
+
+    svg.innerHTML = html;
+  }
+  window.renderMonthlyChart = renderMonthlyChart;
+
+  // ============ Weekday chart ============
+  /**
+   * Renderiza el gráfico SVG de kilómetros por día de la semana
+   * (`#chart-weekday`). Resalta el día con más actividad en
+   * `--accent-warm`. Los datos vienen de `window.MENDI.kmByWeekday`.
+   * Expuesta como `window.renderWeekdayChart`.
+   */
+  function renderWeekdayChart() {
+    const svg = document.getElementById("chart-weekday");
+    if (!svg) return;
+    const data = (window.MENDI || {}).kmByWeekday || [];
+    if (!data.length) { svg.innerHTML = ""; return; }
+
+    const W = svg.getBoundingClientRect().width || 300;
+    const H = 90;
+    const PAD_T = 14, PAD_B = 18, PAD_X = 4;
+    const innerW = W - PAD_X * 2;
+    const innerH = H - PAD_T - PAD_B;
+    const labels = ["L", "M", "X", "J", "V", "S", "D"];
+    const maxV = Math.max(...data, 1);
+    const slotW = innerW / data.length;
+    const barW = Math.max(4, slotW * 0.6);
+    const cAccent = cssVar("--accent");
+    const cWarm = cssVar("--accent-warm");
+    const cDim = cssVar("--text-dim");
+    const cText = cssVar("--text");
+
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    let html = "";
+    data.forEach((v, i) => {
+      const cx = PAD_X + slotW * i + slotW / 2;
+      const barH = Math.max(2, (v / maxV) * innerH);
+      const y = PAD_T + innerH - barH;
+      const isMax = v === maxV;
+      const color = isMax ? cWarm : cAccent;
+      html += `<rect x="${(cx - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="${color}" fill-opacity="${isMax ? 0.9 : 0.55}"/>`;
+      html += `<text x="${cx.toFixed(1)}" y="${H - 4}" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" fill="${cDim}">${labels[i]}</text>`;
+      if (v > 0) html += `<text x="${cx.toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle" font-family="IBM Plex Mono" font-size="7.5" fill="${isMax ? cWarm : cText}">${v}</text>`;
+    });
+    svg.innerHTML = html;
+  }
+
+  // ============ Seasonality chart ============
+  /**
+   * Renderiza el gráfico SVG de estacionalidad mensual histórica
+   * (`#chart-seasonality`). Muestra la distribución de km por mes
+   * calendario (todos los años). Los datos vienen de
+   * `window.MENDI.kmByMonthHist`. Expuesta como
+   * `window.renderSeasonalityChart`.
+   */
+  function renderSeasonalityChart() {
+    const svg = document.getElementById("chart-seasonality");
+    if (!svg) return;
+    const data = (window.MENDI || {}).kmByMonthHist || [];
+    if (!data.length) { svg.innerHTML = ""; return; }
+
+    const W = svg.getBoundingClientRect().width || 300;
+    const H = 90;
+    const PAD_T = 14, PAD_B = 18, PAD_X = 4;
+    const innerW = W - PAD_X * 2;
+    const innerH = H - PAD_T - PAD_B;
+    const labels = ["E","F","M","A","M","J","J","A","S","O","N","D"];
+    const maxV = Math.max(...data, 1);
+    const slotW = innerW / data.length;
+    const barW = Math.max(4, slotW * 0.6);
+    const cCool = cssVar("--accent-cool");
+    const cWarm = cssVar("--accent-warm");
+    const cDim = cssVar("--text-dim");
+    const cText = cssVar("--text");
+
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    let html = "";
+    data.forEach((v, i) => {
+      const cx = PAD_X + slotW * i + slotW / 2;
+      const barH = Math.max(2, (v / maxV) * innerH);
+      const y = PAD_T + innerH - barH;
+      const isMax = v === maxV;
+      const color = isMax ? cWarm : cCool;
+      html += `<rect x="${(cx - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="${color}" fill-opacity="${isMax ? 0.9 : 0.55}"/>`;
+      html += `<text x="${cx.toFixed(1)}" y="${H - 4}" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" fill="${cDim}">${labels[i]}</text>`;
+      if (isMax) html += `<text x="${cx.toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle" font-family="IBM Plex Mono" font-size="7.5" fill="${cWarm}">${v}</text>`;
+    });
+    svg.innerHTML = html;
+  }
+
+  window.renderWeekdayChart = renderWeekdayChart;
+  window.renderSeasonalityChart = renderSeasonalityChart;
+
+  // ============ Rotación de silueta hero ============
+  /**
+   * Muestra la silueta de elevación del hero correspondiente al índice
+   * `idx` dentro de `window.MENDI.heroProfiles`. Aplica una transición
+   * de fundido (clase `fading`) antes de actualizar los paths SVG y la
+   * etiqueta de nombre.
+   * @param {number} idx  Índice en el array `heroProfiles`.
+   */
+  function setHeroProfile(idx) {
+    const MENDI = window.MENDI || {};
+    const profiles = MENDI.heroProfiles || [];
+    if (!profiles.length) return;
+    currentProfileIdx = idx;
+    const p = profiles[idx];
+    const lineEl = document.getElementById("hero-elev-line");
+    const areaEl = document.getElementById("hero-elev-area");
+    const tagEl = document.getElementById("hero-route-tag");
+    if (!lineEl || !areaEl) return;
+
+    lineEl.classList.add("fading");
+    areaEl.classList.add("fading");
+    if (tagEl) tagEl.style.opacity = "0";
+
+    setTimeout(() => {
+      lineEl.setAttribute("d", p.line);
+      areaEl.setAttribute("d", p.area);
+      if (tagEl) tagEl.textContent = `silueta · ${p.name}`;
+      requestAnimationFrame(() => {
+        lineEl.classList.remove("fading");
+        areaEl.classList.remove("fading");
+        if (tagEl) tagEl.style.opacity = "1";
+      });
+    }, 600);
+  }
+
+  /**
+   * Selecciona aleatoriamente un perfil distinto al actual y llama a
+   * `setHeroProfile`. Garantiza que nunca se repite el mismo índice
+   * consecutivo.
+   */
+  function rotateProfile() {
+    const profiles = (window.MENDI || {}).heroProfiles || [];
+    if (profiles.length < 2) return;
+    let next = currentProfileIdx;
+    while (next === currentProfileIdx) {
+      next = Math.floor(Math.random() * profiles.length);
+    }
+    setHeroProfile(next);
+  }
+
+  /**
+   * Cancela el timer de rotación existente y, si `ms > 0`, crea uno
+   * nuevo con el intervalo indicado.
+   * @param {number} ms  Milisegundos entre rotaciones. `0` desactiva.
+   */
+  function setRotationInterval(ms) {
+    if (rotationTimer) { clearInterval(rotationTimer); rotationTimer = null; }
+    if (ms > 0) rotationTimer = setInterval(rotateProfile, ms);
+  }
+
+  /**
+   * Inicializa la rotación automática de siluetas en el hero:
+   * - Muestra un perfil aleatorio inicial.
+   * - Lee el intervalo guardado en `localStorage` y lo aplica.
+   * - Conecta el `<select>` de intervalo si existe.
+   * - Registra el teardown del timer en `window.MENDI_TEARDOWN`.
+   */
+  function initRotation() {
+    const profiles = (window.MENDI || {}).heroProfiles || [];
+    const sel = document.getElementById("rotation-select");
+    if (!profiles.length) {
+      const tag = document.getElementById("hero-route-tag");
+      if (tag) tag.style.display = "none";
+      return;
+    }
+    currentProfileIdx = -1;
+    const startIdx = Math.floor(Math.random() * profiles.length);
+    setHeroProfile(startIdx);
+
+    let savedInterval = "15000";
+    try { savedInterval = localStorage.getItem(STORAGE_INTERVAL) || "15000"; } catch (_) {}
+    if (sel) {
+      sel.value = savedInterval;
+      if (profiles.length < 2) {
+        sel.disabled = true;
+      } else {
+        setRotationInterval(parseInt(savedInterval, 10));
+      }
+      sel.addEventListener("change", (e) => {
+        const v = e.target.value;
+        try { localStorage.setItem(STORAGE_INTERVAL, v); } catch (_) {}
+        setRotationInterval(parseInt(v, 10));
+      });
+    } else {
+      setRotationInterval(parseInt(savedInterval, 10));
+    }
+
+    window.MENDI_TEARDOWN.push(() => {
+      if (rotationTimer) { clearInterval(rotationTimer); rotationTimer = null; }
+      currentProfileIdx = -1;
+    });
+  }
+
+  // ============ Edición inline del nombre ============
+  /**
+   * Activa la edición inline de nombres de ruta en la tabla de la vista
+   * Resumen. Por cada `.editable-name` envía un PATCH a
+   * `/rutas/{id}/renombrar` al perder el foco si el valor cambió.
+   * Usa `input.__mendiBound` para evitar dobles bindings tras swaps.
+   */
+  function initInlineEdit() {
+    document.querySelectorAll(".editable-name").forEach(input => {
+      // Evita re-binding si ya estamos enganchados (no debería pasar tras
+      // swap, pero protegemos contra dobles inits).
+      if (input.__mendiBound) return;
+      input.__mendiBound = true;
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); input.blur(); }
+        if (e.key === "Escape") {
+          input.value = input.dataset.original || input.value;
+          input.blur();
+        }
+      });
+      input.addEventListener("blur", async () => {
+        const id = input.dataset.routeId;
+        const newName = input.value.trim();
+        if (!id || !newName || newName === input.dataset.original) return;
+        const fd = new FormData();
+        fd.append("new_name", newName);
+        try {
+          const res = await fetch(`/rutas/${id}/renombrar`, { method: "POST", body: fd });
+          if (res.ok) {
+            input.dataset.original = newName;
+          } else {
+            input.value = input.dataset.original || input.value;
+          }
+        } catch (err) {
+          input.value = input.dataset.original || input.value;
+        }
+      });
+    });
+  }
+
+  // ============ Dropzone (importar) ============
+  /**
+   * Inicializa la zona de drag & drop de la vista Importar (`#dropzone`):
+   * - Abre el selector de archivos al hacer clic fuera de la lista.
+   * - Actualiza la lista de archivos y el resumen de tamaño total.
+   * - Gestiona los eventos `dragenter`, `dragover`, `dragleave` y `drop`.
+   * - Habilita/deshabilita el botón de envío según haya archivos.
+   */
+  function initDropzone() {
+    const dz = document.getElementById("dropzone");
+    if (!dz) return;
+    const input = dz.querySelector("input[type=file]");
+    const list = dz.querySelector(".filelist");
+    const submit = document.getElementById("dz-submit");
+
+    const meta = document.getElementById("filelist-meta");
+
+    function refreshList() {
+      if (!input.files || !input.files.length) {
+        list.innerHTML = "";
+        if (meta) { meta.style.display = "none"; meta.textContent = ""; }
+        if (submit) submit.disabled = true;
+        return;
+      }
+      const files = Array.from(input.files);
+      const totalKB = files.reduce((s, f) => s + f.size, 0) / 1024;
+      const totalLabel = totalKB > 1024
+        ? `${(totalKB / 1024).toFixed(1).replace(".", ",")} MB`
+        : `${totalKB.toFixed(0)} KB`;
+      if (meta) {
+        meta.style.display = "block";
+        meta.textContent = `${files.length} archivo${files.length === 1 ? "" : "s"} · ${totalLabel}`;
+      }
+      list.innerHTML = files
+        .map(f => `<span class="fname">📁 ${escapeHtml(f.name)} · ${(f.size/1024).toFixed(0)} KB</span>`)
+        .join("");
+      if (submit) submit.disabled = false;
+    }
+
+    dz.addEventListener("click", (e) => {
+      if (e.target.tagName === "BUTTON") return;
+      // No abrir el selector si el clic está dentro de la lista de archivos
+      // (el usuario está intentando hacer scroll por la lista).
+      if (e.target.closest(".filelist-wrap")) return;
+      input.click();
+    });
+    input.addEventListener("change", refreshList);
+    ["dragenter", "dragover"].forEach(ev =>
+      dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("drag"); }));
+    ["dragleave", "drop"].forEach(ev =>
+      dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("drag"); }));
+    dz.addEventListener("drop", (e) => {
+      e.preventDefault();
+      input.files = e.dataTransfer.files;
+      refreshList();
+    });
+  }
+
+  // ============ Calendario heatmap resumen (reagrupado por día local) ============
+  /**
+   * Renderiza el heatmap de calendario de la vista Resumen
+   * (`#resumen-calendar`). Reagrupa los km del servidor (días UTC) a días
+   * locales del navegador antes de pintar, mostrando los 3 años más
+   * recientes con datos. Los niveles de color se calculan por km mensual.
+   */
+  function renderResumenCalendar() {
+    const wrap = document.getElementById("resumen-calendar");
+    if (!wrap) return;
+    const MENDI = window.MENDI || {};
+    const kmByDay = MENDI.kmByDay || [];
+    if (!kmByDay.length) return;
+
+    const { fmtDateLocal, localDateKey } = window.MENDI_UTIL || {};
+    if (!localDateKey) return;
+
+    // Reagrupar por día local
+    const byLocal = {};
+    kmByDay.forEach(({ iso, km }) => {
+      const key = localDateKey(iso + "T12:00:00Z");
+      byLocal[key] = (byLocal[key] || 0) + km;
+    });
+
+    // Años con datos (máx 3 más recientes)
+    const years = [...new Set(Object.keys(byLocal).map(k => parseInt(k.slice(0, 4))))]
+      .sort((a, b) => a - b).slice(-3);
+
+    const MONTH_ES = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+
+    // Construir HTML igual que el SSR pero con días locales
+    let calHtml = '<div style="display:flex; flex-direction:column; gap:6px;">';
+    calHtml += '<div class="cal-heatmap"><div></div>';
+    MONTH_ES.forEach(m => { calHtml += `<div class="cal-month">${m}</div>`; });
+    calHtml += '</div>';
+
+    years.forEach(year => {
+      calHtml += '<div class="cal-heatmap">';
+      calHtml += `<div class="cal-row-label">${year}</div>`;
+      for (let m = 1; m <= 12; m++) {
+        const key = `${year}-${String(m).padStart(2,"0")}`;
+        const v = Object.keys(byLocal)
+          .filter(k => k.startsWith(key))
+          .reduce((s, k) => s + byLocal[k], 0);
+        let level = "";
+        if (v > 14) level = "lvl4";
+        else if (v > 12) level = "lvl3";
+        else if (v > 8)  level = "lvl2";
+        else if (v > 0)  level = "lvl1";
+        const title = v > 0
+          ? `${MONTH_ES[m-1]} ${year} · ${v.toFixed(2).replace(".",",")} km`
+          : "sin actividad";
+        calHtml += `<div class="cal-cell ${level}" title="${escapeHtml(title)}"></div>`;
+      }
+      calHtml += '</div>';
+    });
+    calHtml += '</div>';
+    wrap.innerHTML = calHtml;
+  }
+
+  // ============ Registro de páginas ============
+  window.MENDI_PAGES.resumen = {
+    init() {
+      // Aplicamos el tema en cada init (refresca iconos sin perder estado).
+      let saved = "dark";
+      try { saved = localStorage.getItem(STORAGE_THEME) || "dark"; } catch (_) {}
+      applyTheme(saved);
+      initMap();
+      renderMonthlyChart();
+      renderWeekdayChart();
+      renderSeasonalityChart();
+      renderResumenCalendar();
+      initRotation();
+      initInlineEdit();
+      // Convertir fechas de la tabla a hora local del navegador
+      document.querySelectorAll("td[data-iso]").forEach(td => {
+        const iso = td.dataset.iso;
+        if (iso) td.textContent = fmtDateLocal(iso);
+      });
+    }
+  };
+
+  window.MENDI_PAGES.importar = {
+    init() {
+      let saved = "dark";
+      try { saved = localStorage.getItem(STORAGE_THEME) || "dark"; } catch (_) {}
+      applyTheme(saved);
+      initDropzone();
+    }
+  };
+
+  // página "analisis" se registra en /static/js/analisis.js
+})();

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<script>
+  // Bootstrap de tema síncrono — evita el "guiño" oscuro al cargar el login
+  // en tema claro. Mismo patrón que base.html.
+  (function () {
+    try {
+      var t = localStorage.getItem("mendi.theme") || "dark";
+      if (t !== "light" && t !== "dark") t = "dark";
+      document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  })();
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Iniciar sesión · mendi.log</title>
+
+<link rel="preload" as="font" type="font/woff2" href="{{ url_for('static', path='fonts/ibm-plex-sans-400.woff2') }}" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="{{ url_for('static', path='fonts/ibm-plex-mono-400.woff2') }}" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="{{ url_for('static', path='fonts/fraunces-400.woff2') }}" crossorigin>
+
+<link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', path='css/login.css') }}">
+</head>
+<body class="login-body">
+
+<main class="login-shell">
+  <div class="login-card">
+
+    <div class="login-brand">
+      <div class="brand-mark">M</div>
+      <div class="brand-name">mendi.log</div>
+    </div>
+
+    <p class="login-tagline">tu bitácora de montaña · 100% local</p>
+
+    {% if error %}
+    <div class="login-error" role="alert">
+      {{ error }}
+    </div>
+    {% endif %}
+
+    <form method="POST" action="/login" class="login-form" autocomplete="on">
+      <label class="login-field">
+        <span class="login-label">correo</span>
+        <input
+          type="email"
+          name="email"
+          required
+          autofocus
+          autocomplete="username"
+          spellcheck="false"
+          placeholder="tu@correo.es">
+      </label>
+
+      <label class="login-field">
+        <span class="login-label">contraseña</span>
+        <input
+          type="password"
+          name="password"
+          required
+          autocomplete="current-password"
+          placeholder="••••••••">
+      </label>
+
+      <label class="login-remember">
+        <input type="checkbox" name="remember" value="1">
+        <span>recordarme en este equipo</span>
+      </label>
+
+      <button type="submit" class="login-submit">
+        entrar
+      </button>
+    </form>
+
+    <div class="login-footnote">
+      acceso restringido · contacta con el administrador si no tienes cuenta
+    </div>
+
+    <button id="theme-toggle" class="login-theme" title="Cambiar tema" aria-label="Cambiar tema">
+      <svg id="theme-icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke-linejoin="round"/></svg>
+      <svg id="theme-icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" style="display:none;"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" stroke-linecap="round"/></svg>
+    </button>
+
+  </div>
+</main>
+
+<script>
+  // Toggle de tema autónomo (esta página no carga app.js).
+  (function () {
+    var btn = document.getElementById('theme-toggle');
+    var moon = document.getElementById('theme-icon-moon');
+    var sun = document.getElementById('theme-icon-sun');
+    if (!btn) return;
+    function sync() {
+      var t = document.documentElement.getAttribute('data-theme') || 'dark';
+      if (moon && sun) {
+        moon.style.display = (t === 'dark') ? '' : 'none';
+        sun.style.display = (t === 'dark') ? 'none' : '';
+      }
+    }
+    sync();
+    btn.addEventListener('click', function () {
+      var cur = document.documentElement.getAttribute('data-theme') || 'dark';
+      var next = (cur === 'dark') ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem('mendi.theme', next); } catch (e) {}
+      sync();
+    });
+  })();
+</script>
+
+</body>
+</html>

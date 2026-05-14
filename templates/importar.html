@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block title %}Importar · mendi.log{% endblock %}
+{% block breadcrumb %}importar{% endblock %}
+
+{% block footnote_text %}mendi.log · importación de archivos GPX{% endblock %}
+
+{% block content %}
+
+<div class="importar-wrap">
+
+{% if msg %}
+  <div class="flash ok">✓ {{ msg }}</div>
+{% endif %}
+{% if error %}
+  <div class="flash err">⚠ {{ error }}</div>
+{% endif %}
+
+<section class="page-head">
+  <div class="page-head-grid"></div>
+  <div class="page-head-content">
+    <div>
+      <div class="page-eyebrow">gestión de datos</div>
+      <h1 class="page-title">Im<em>portar</em></h1>
+      <div class="page-meta">
+        <div><span class="l">archivos .gpx · multi-archivo · wikiloc, strava y otros</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="tabs" role="tablist" aria-label="Acciones de importación">
+  <button class="tab active" type="button" role="tab" aria-selected="true" data-tab="import">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v12m-5-5l5-5 5 5M5 20h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Importar GPX
+  </button>
+  <button class="tab" type="button" role="tab" aria-selected="false" data-tab="reprocess">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Reprocesar rutas
+  </button>
+  <button class="tab" type="button" role="tab" aria-selected="false" data-tab="backfill">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s-7-7.58-7-12a7 7 0 0 1 14 0c0 4.42-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>
+    Completar zonas
+  </button>
+  <button class="tab" type="button" role="tab" aria-selected="false" data-tab="duplicados">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+    Duplicados
+  </button>
+</div>
+
+<section class="tab-panel active" id="tab-import" role="tabpanel">
+  <div class="section-head">
+    <h2 class="section-title">Importar rutas</h2>
+    <div class="section-meta">archivos .gpx · multi-archivo soportado</div>
+  </div>
+
+  {# hx-boost="false" porque el <body> está boosted y, sin esto, HTMX
+     interceptaba el submit y disparaba un POST extra a /importar (el
+     legacy) que terminaba redirigiendo a "/". El streaming nuestro lo
+     hace nuestro handler JS con fetch — no queremos que HTMX participe. #}
+  <form id="import-form" method="post" action="/importar/stream" enctype="multipart/form-data" hx-boost="false">
+    <div id="dropzone" class="dropzone">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M12 4v12m-5-5l5-5 5 5M5 20h14" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <h3>Arrastra tus GPX aquí</h3>
+      <p>o haz clic para seleccionarlos · puedes subir varios a la vez</p>
+      <input type="file" name="files" accept=".gpx,.xml" multiple>
+      <div class="filelist-wrap">
+        <div class="filelist-meta" id="filelist-meta" style="display:none;"></div>
+        <div class="filelist"></div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:18px; justify-content:flex-end;">
+      <a href="/" class="btn btn-ghost">Cancelar</a>
+      <button id="dz-submit" type="submit" class="btn" disabled>Importar</button>
+    </div>
+  </form>
+
+  <div id="import-overlay" class="import-overlay" aria-hidden="true">
+    <div class="import-overlay-card import-overlay-card--wide">
+      <div class="spinner" id="import-spinner"></div>
+      <div class="import-overlay-title" id="import-overlay-title">Procesando GPX…</div>
+      <div class="import-overlay-sub" id="import-overlay-sub">Iniciando…</div>
+      <div class="import-progress">
+        <div class="import-progress-bar"><div class="import-progress-fill" id="import-progress-fill"></div></div>
+        <div class="import-progress-meta">
+          <span id="import-progress-counter">0 / 0</span>
+          <span id="import-progress-current"></span>
+        </div>
+      </div>
+      <ul class="import-log" id="import-log" aria-live="polite"></ul>
+      <div class="import-overlay-actions" id="import-overlay-actions" style="display:none;">
+        <a href="/" class="btn">Ver rutas</a>
+        <button type="button" class="btn btn-ghost" id="import-overlay-close">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="tab-panel" id="tab-reprocess" role="tabpanel" hidden>
+  <div class="section-head">
+    <h2 class="section-title">Reprocesar rutas</h2>
+    <div class="section-meta">vuelve a ejecutar todo el pipeline sobre los GPX importados</div>
+  </div>
+
+  <p style="color:var(--text-dim); font-size:14px; max-width:680px; margin:0 0 16px;">
+    Útil cuando se han mejorado los algoritmos de parsing, limpieza de
+    nombres, detección de zona o cálculo de dificultad. Recalcula stats,
+    nombres, regiones y dificultad para cada ruta releyendo su GPX original.
+    Los <strong>nombres editados manualmente se sobreescriben</strong> (el
+    nombre original del GPX se conserva). Las notas y etiquetas se
+    preservan. Las rutas sin GPX guardado se omiten. En lotes grandes puede
+    tardar varios minutos por el límite de OpenStreetMap.
+  </p>
+
+  <div style="display:flex; gap:10px; align-items:center;">
+    <button id="reprocess-btn" type="button" class="btn">Reprocesar todas las rutas</button>
+    <span id="reprocess-status" style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--text-dim);"></span>
+  </div>
+</section>
+
+<section class="tab-panel" id="tab-backfill" role="tabpanel" hidden>
+  <div class="section-head">
+    <h2 class="section-title">Completar zonas</h2>
+    <div class="section-meta">geocodificación inversa para rutas sin región</div>
+  </div>
+
+  <p style="color:var(--text-dim); font-size:14px; max-width:680px; margin:0 0 16px;">
+    Si tienes rutas importadas antes de que el detector de zona supiera leer la
+    coordenada de inicio, este proceso las completará consultando OpenStreetMap.
+    Se respeta el límite de una consulta por segundo, así que en lotes grandes
+    puede tardar.
+  </p>
+
+  <div style="display:flex; gap:10px; align-items:center;">
+    <button id="backfill-btn" type="button" class="btn">Completar zonas faltantes</button>
+    <span id="backfill-status" style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--text-dim);"></span>
+  </div>
+</section>
+
+<section class="tab-panel" id="tab-duplicados" role="tabpanel" hidden>
+  <div class="section-head">
+    <h2 class="section-title">Limpiar duplicados</h2>
+    <div class="section-meta">detecta rutas con contenido GPX idéntico</div>
+  </div>
+
+  <p style="color:var(--text-dim); font-size:14px; max-width:680px; margin:0 0 16px;">
+    Recalcula el hash de cada GPX en disco y agrupa las rutas que comparten
+    contenido. De cada grupo se conserva la ruta <strong>más antigua</strong>
+    (id más bajo) y se eliminan las demás. Útil tras importar lotes antiguos
+    creados antes de que existiera la deduplicación automática.
+    Las notas y etiquetas de las rutas borradas <strong>se pierden</strong>.
+  </p>
+
+  <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <button id="dups-detect-btn" type="button" class="btn">Detectar duplicados</button>
+    <button id="dups-clean-btn" type="button" class="btn" disabled style="background:var(--accent-warm); color:#000;">Limpiar duplicados</button>
+    <span id="dups-status" style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--text-dim);"></span>
+  </div>
+
+  <div id="dups-results" style="margin-top:18px;"></div>
+</section>
+
+<!-- JS extraído a /static/js/importar.js para evitar 360+ líneas embebidas en
+     el template (sirve también para que el navegador lo cachee con el resto
+     de assets estáticos —ver CacheHeadersMiddleware en main.py). El bloque
+     anterior contenía: tabs, importación NDJSON streaming, reprocesado,
+     completar zonas y limpiador de duplicados. -->
+<script src="{{ url_for('static', path='/js/importar.js') }}" defer></script>
+
+</div>{# /.importar-wrap #}
+{% endblock %}

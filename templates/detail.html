@@ -1,0 +1,664 @@
+{% extends "base.html" %}
+
+{% block title %}{{ data.name }} · mendi.log{% endblock %}
+{% block breadcrumb %}<a href="/rutas">rutas</a> <span class="sep">/</span> <span class="current" id="bc-name">{{ data.name }}</span>{% endblock %}
+
+{# data-page=detail → el dispatcher monta MENDI_PAGES.detail tras cada swap. #}
+{% block page_id %}detail{% endblock %}
+
+{% block topbar_extra %}
+<div class="nav-pair">
+  {% if data.prev_id %}
+  <a class="ctrl" href="/rutas/{{ data.prev_id }}" title="Ruta anterior · {{ data.prev_name }}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    anterior
+  </a>
+  {% else %}
+  <button class="ctrl" disabled style="opacity:0.4; cursor:not-allowed;" title="No hay ruta anterior">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    anterior
+  </button>
+  {% endif %}
+  {% if data.next_id %}
+  <a class="ctrl" href="/rutas/{{ data.next_id }}" title="Ruta siguiente · {{ data.next_name }}">
+    siguiente
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </a>
+  {% else %}
+  <button class="ctrl" disabled style="opacity:0.4; cursor:not-allowed;" title="No hay ruta siguiente">
+    siguiente
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  {% endif %}
+</div>
+
+{% if current_user and current_user.role in ("admin", "user") %}
+<button class="ctrl" id="btn-rename" title="Editar nombre de la ruta">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  editar
+</button>
+
+<button class="ctrl danger" id="btn-delete" title="Eliminar esta ruta">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+</button>
+{% endif %}
+{% endblock %}
+
+{% block footnote_text %}mendi.log · {{ data.name }} · derivado de gpx local · {{ data.map.points_count | fmt_int }} puntos{% endblock %}
+
+{% block content %}
+
+<!-- ===== HERO ===== -->
+<section class="hero detail-hero">
+  <div class="hero-bg"></div>
+  <div class="hero-bg-elev">
+    <svg viewBox="0 0 800 200" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="hero-elev-grad" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stop-color="var(--{{ data.hero.level }})" stop-opacity="0.3"/>
+          <stop offset="100%" stop-color="var(--{{ data.hero.level }})" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      {% set ratio = 200 / 280 %}
+      <path d="{{ data.elev.area }}" fill="url(#hero-elev-grad)" transform="scale(1, {{ ratio }})"/>
+      <path d="{{ data.elev.line }}" fill="none" stroke="var(--{{ data.hero.level }})" stroke-width="1" stroke-opacity="0.5" transform="scale(1, {{ ratio }})"/>
+    </svg>
+  </div>
+
+  <div class="hero-content">
+    <div class="hero-eyebrow">
+      ruta #{{ "%02d"|format(data.hero.number) }} <span class="dot-sep">·</span>
+      <span class="meta-piece">{{ data.hero.date_str }}</span> <span class="dot-sep">·</span>
+      <span class="meta-piece">{{ data.hero.region }}</span> <span class="dot-sep">·</span>
+      <span class="meta-piece">{{ data.hero.season }}</span>
+    </div>
+    <h1 class="hero-title" id="hero-title">{{ data.hero.title }}</h1>
+    <div class="hero-subtitle">
+      {% if data.hero.subregion %}
+      <span class="from">desde</span> {{ data.hero.subregion }}
+      {% endif %}
+      <span class="hero-tag {{ data.hero.level }}"><span class="dot"></span>{{ data.hero.score_str }} · {{ data.hero.level_label }}</span>
+    </div>
+
+    <div class="hero-stats">
+      <div class="hero-stat">
+        <div class="l">distancia</div>
+        <div class="v tnum">{{ data.hero.distance_str }}<span class="u">km</span></div>
+      </div>
+      <div class="hero-stat">
+        <div class="l">desnivel +</div>
+        <div class="v tnum">{{ data.hero.gain_str }}<span class="u">m</span></div>
+      </div>
+      <div class="hero-stat">
+        <div class="l">tiempo</div>
+        <div class="v tnum">{{ data.hero.time_str }}</div>
+      </div>
+      <div class="hero-stat">
+        <div class="l">ritmo medio</div>
+        <div class="v tnum">{{ data.hero.pace_str }}<span class="u">/km</span></div>
+      </div>
+      <div class="hero-stat">
+        <div class="l">altitud máx.</div>
+        <div class="v tnum">{{ data.hero.max_alt_str }}<span class="u">m</span></div>
+      </div>
+      <div class="hero-stat score">
+        <div class="l">dificultad</div>
+        <div class="v tnum">{{ data.hero.score_str }}<span class="u">/10</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 01 · MAPA ===== -->
+<section class="section">
+  <div class="section-head">
+    <div class="section-title-wrap">
+      <div class="section-num">01</div>
+      <h2 class="section-title">Mapa del recorrido</h2>
+    </div>
+    <div class="section-meta">trazado real desde GPX · {{ data.map.points_count | fmt_int }} puntos</div>
+  </div>
+
+  <div class="map-card">
+    <div class="detail-map-wrap">
+      <div id="detail-map"></div>
+      <div class="loading-overlay" id="detail-map-loading">
+        <div class="lo-inner">
+          <span>cargando trazado</span>
+          <span class="lo-dots"><span></span><span></span><span></span></span>
+        </div>
+      </div>
+    </div>
+    <aside class="map-side">
+      <div class="map-side-title">Hitos del recorrido</div>
+
+      {% for m in data.map.milestones %}
+      <div class="marker-item">
+        <div class="marker-pin {{ m.kind }}">
+          {% if m.kind == 'start' %}A
+          {% elif m.kind == 'summit' %}▲
+          {% else %}A{% endif %}
+        </div>
+        <div class="marker-info">
+          <div class="name">{{ m.name }}</div>
+          <div class="sub">{{ m.label }}{% if m.time_str != '—' %} · {{ m.time_str }}{% endif %}</div>
+        </div>
+        <div class="marker-meta">
+          <span>{{ m.elev_m | fmt_int }} m</span>
+          <span class="km">{{ m.km_str }}</span>
+        </div>
+      </div>
+      {% endfor %}
+
+      <div class="map-info-block">
+        {% for row in data.map.info_rows %}
+        <div class="map-info-row">
+          <div class="l">{{ row.label }}</div>
+          <div class="v">{{ row.value }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ===== 02 · PERFIL ===== -->
+<section class="section">
+  <div class="section-head">
+    <div class="section-title-wrap">
+      <div class="section-num">02</div>
+      <h2 class="section-title">Perfil de elevación</h2>
+    </div>
+    <div class="section-meta">pasa el ratón para inspeccionar cada punto</div>
+  </div>
+
+  <div class="elev-card">
+    <div class="elev-stats-strip">
+      <div class="elev-stat up">
+        <div class="l">ascenso total</div>
+        <div class="v">{{ data.elev_strip.gain_str }}</div>
+      </div>
+      <div class="elev-stat down">
+        <div class="l">descenso total</div>
+        <div class="v">{{ data.elev_strip.loss_str }}</div>
+      </div>
+      <div class="elev-stat">
+        <div class="l">altitud mínima</div>
+        <div class="v">{{ data.elev_strip.alt_min_str }}</div>
+      </div>
+      <div class="elev-stat">
+        <div class="l">altitud máxima</div>
+        <div class="v">{{ data.elev_strip.alt_max_str }}</div>
+      </div>
+      <div class="elev-stat">
+        <div class="l">pendiente media</div>
+        <div class="v">{{ data.elev_strip.slope_avg_str }}</div>
+      </div>
+      <div class="elev-stat">
+        <div class="l">pendiente máx.</div>
+        <div class="v">{{ data.elev_strip.slope_max_str }}</div>
+      </div>
+    </div>
+
+    <div class="elev-chart-wrap" id="elev-wrap">
+      <svg id="elev-svg" viewBox="0 0 800 280" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="elev-grad" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stop-color="var(--{{ data.hero.level }})" stop-opacity="0.45"/>
+            <stop offset="100%" stop-color="var(--{{ data.hero.level }})" stop-opacity="0"/>
+          </linearGradient>
+          <pattern id="elev-grid" width="80" height="56" patternUnits="userSpaceOnUse">
+            <path d="M 80 0 L 0 0 0 56" fill="none" stroke="var(--border)" stroke-width="0.5" stroke-opacity="0.7"/>
+          </pattern>
+        </defs>
+
+        <rect width="800" height="280" fill="url(#elev-grid)"/>
+
+        <g class="elev-axis-label">
+          {% set y_positions = [36, 98, 160, 222, 266] %}
+          {% for label in data.elev.axis.y %}
+          <text x="8" y="{{ y_positions[loop.index0] }}">{{ label }}</text>
+          {% endfor %}
+        </g>
+        <g class="elev-axis-label">
+          {% set x_positions = [0, 200, 400, 600, 780] %}
+          {% for label in data.elev.axis.x %}
+          <text x="{{ x_positions[loop.index0] }}" y="276"{% if loop.last %} text-anchor="end"{% endif %}>{{ label }}</text>
+          {% endfor %}
+        </g>
+
+        <path id="elev-area" d="{{ data.elev.area }}" fill="url(#elev-grad)"/>
+        <path id="elev-line" d="{{ data.elev.line }}" fill="none" stroke="var(--{{ data.hero.level }})" stroke-width="1.6" stroke-opacity="0.95"/>
+
+        <g id="summit-mark" transform="translate({{ '%.0f' | format(data.elev.summit_x) }}, {{ '%.0f' | format(data.elev.summit_y) }})">
+          <line x1="0" y1="0" x2="0" y2="14" stroke="var(--accent-warm)" stroke-width="1" stroke-dasharray="2 2"/>
+          <circle cx="0" cy="0" r="4" fill="var(--accent-warm)" stroke="var(--bg)" stroke-width="2"/>
+          <text x="6" y="-4" font-family="IBM Plex Mono" font-size="10" fill="var(--accent-warm)" letter-spacing="0.05em">▲ cima · {{ data.elev.summit_alt_str }} m</text>
+        </g>
+
+        <line id="elev-cursor" class="elev-cursor-line" x1="0" y1="0" x2="0" y2="280" style="display:none;"/>
+        <circle id="elev-cursor-dot" class="elev-cursor-dot" r="4" cx="0" cy="0" style="display:none;"/>
+      </svg>
+
+      <div id="elev-tooltip" class="elev-tooltip">
+        <div class="row alt"><span class="l">altitud</span><span class="v" id="tt-alt">—</span></div>
+        <div class="row"><span class="l">distancia</span><span class="v" id="tt-dist">—</span></div>
+        <div class="row"><span class="l">tiempo</span><span class="v" id="tt-time">—</span></div>
+        <div class="row"><span class="l">pendiente</span><span class="v" id="tt-grad">—</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 03 · DATOS TÉCNICOS ===== -->
+<section class="section">
+  <div class="section-head">
+    <div class="section-title-wrap">
+      <div class="section-num">03</div>
+      <h2 class="section-title">Datos técnicos</h2>
+    </div>
+    <div class="section-meta">computado a partir del GPX original</div>
+  </div>
+
+  <div class="tech-grid">
+    <div class="tech-cell">
+      <div class="l">distancia 2D</div>
+      <div class="v">{{ data.tech.distance_2d_str }}<span class="u">km</span></div>
+      <div class="sub">proyección en plano</div>
+    </div>
+    <div class="tech-cell">
+      <div class="l">distancia 3D</div>
+      <div class="v">{{ data.tech.distance_3d_str }}<span class="u">km</span></div>
+      <div class="sub">incluye desnivel</div>
+    </div>
+    <div class="tech-cell">
+      <div class="l">tiempo total</div>
+      <div class="v">{{ data.tech.total_time_str }}</div>
+      <div class="sub">{{ data.tech.start_end_str }}</div>
+    </div>
+    <div class="tech-cell">
+      <div class="l">tiempo en marcha</div>
+      <div class="v">{{ data.tech.moving_time_str }}</div>
+      <div class="sub">{{ data.tech.stop_time_str }}</div>
+    </div>
+
+    <div class="tech-cell">
+      <div class="l">ritmo medio</div>
+      <div class="v">{{ data.tech.pace_avg }}<span class="u">/km</span></div>
+      <div class="sub">{{ data.tech.pace_avg_kmh }} km/h</div>
+    </div>
+    <div class="tech-cell">
+      <div class="l">ritmo (subida)</div>
+      <div class="v">{{ data.tech.pace_up }}{% if data.tech.pace_up != '—' %}<span class="u">/km</span>{% endif %}</div>
+      <div class="sub">{{ data.tech.pace_up_kmh }} km/h en ascenso</div>
+    </div>
+    <div class="tech-cell">
+      <div class="l">ritmo (bajada)</div>
+      <div class="v">{{ data.tech.pace_down }}{% if data.tech.pace_down != '—' %}<span class="u">/km</span>{% endif %}</div>
+      <div class="sub">{{ data.tech.pace_down_kmh }} km/h en descenso</div>
+    </div>
+    <div class="tech-cell">
+      <div class="l">vam medio</div>
+      <div class="v">{{ data.tech.vam_str }}{% if data.tech.vam_str != '—' %}<span class="u">m/h</span>{% endif %}</div>
+      <div class="sub">subiendo</div>
+    </div>
+
+    <div class="tech-cell">
+      <div class="l">desnivel +</div>
+      <div class="v">{{ data.tech.gain_str }}<span class="u">m</span></div>
+      <div class="sub">acumulado en ascenso</div>
+    </div>
+    <div class="tech-cell">
+      <div class="l">desnivel −</div>
+      <div class="v">{{ data.tech.loss_str }}<span class="u">m</span></div>
+      <div class="sub">acumulado en descenso</div>
+    </div>
+    <div class="tech-cell">
+      <div class="l">altitud min · máx</div>
+      <div class="v">{{ data.tech.alt_range_str }}<span class="u">m</span></div>
+      <div class="sub">{{ data.tech.alt_range_diff_str }}</div>
+    </div>
+    <div class="tech-cell">
+      <div class="l">pendiente avg · máx</div>
+      <div class="v">{{ data.tech.slope_avg_str }} — {{ data.tech.slope_max_str }}<span class="u">%</span></div>
+      <div class="sub">{{ data.tech.hardest_sector_label }}</div>
+    </div>
+
+    <div class="tech-cell">
+      <div class="l">índice de fatiga</div>
+      <div class="v" style="color: var(--{{ data.tech.fatigue_level }});">{{ data.tech.fatigue_str }}<span class="u">/10</span></div>
+      <div class="sub">d × √(1 + d+/d)</div>
+    </div>
+    <div class="tech-cell">
+      <div class="l">puntos GPX</div>
+      <div class="v">{{ data.tech.gpx_points | fmt_int }}</div>
+      <div class="sub">{{ data.tech.gpx_density_str }}</div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 04 · CLIMA ===== -->
+<section class="section" id="weather-section">
+  <div class="section-head">
+    <div class="section-title-wrap">
+      <div class="section-num">04</div>
+      <h2 class="section-title">Clima del día</h2>
+    </div>
+    <div class="section-meta" id="wx-meta">{{ data.weather_meta }}</div>
+  </div>
+
+  <div class="wx-card" id="wx-card">
+    <div class="wx-loading" id="wx-loading">
+      <div class="lo-inner">
+        <span>consultando archivo histórico</span>
+        <span class="lo-dots"><span></span><span></span><span></span></span>
+      </div>
+    </div>
+
+    <div class="wx-content" id="wx-content" style="display:none;">
+      <div class="wx-hero">
+        <div class="wx-hero-left">
+          <div class="wx-condition">
+            <div class="wx-icon" id="wx-icon">
+              <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="22" cy="24" r="9" stroke-opacity="0.95"/>
+                <path d="M22 9v3M22 36v3M7 24h3M34 24h3M11.5 13.5l2.1 2.1M30.4 32.4l2.1 2.1M11.5 34.5l2.1-2.1M30.4 15.6l2.1-2.1" stroke-opacity="0.85"/>
+                <path d="M28 38c-5 0-9 3.4-9.6 7.8C15.6 46.6 13 49.5 13 53c0 3.9 3.1 7 7 7h24c4.4 0 8-3.6 8-8 0-4.1-3.1-7.5-7.1-7.95C44.2 39.6 38.7 35 32 35c-1.4 0-2.7.2-4 .55"
+                      stroke="var(--text-muted)" stroke-opacity="0.75" fill="var(--surface-2)" fill-opacity="0.4"/>
+              </svg>
+            </div>
+            <div class="wx-cond-text">
+              <div class="label" id="wx-cond-label">condición · ventana ruta</div>
+              <div class="name" id="wx-cond-name">—</div>
+            </div>
+          </div>
+
+          <div class="wx-temp-row">
+            <div class="wx-temp-big tnum" id="wx-temp-big">—<span class="u">°C</span></div>
+            <div class="wx-temp-range">
+              <div class="row">
+                <span>media en ruta</span>
+                <span class="v" id="wx-temp-mean">—</span>
+              </div>
+              <div class="row">
+                <span class="arrow-up">↑ máx</span>
+                <span class="v" id="wx-temp-max">—</span>
+              </div>
+              <div class="row">
+                <span class="arrow-down">↓ mín</span>
+                <span class="v" id="wx-temp-min">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="wx-hero-right">
+          <div class="wx-stat">
+            <div class="l">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h12a3 3 0 100-6M3 18h17a3 3 0 110 6" stroke-linecap="round"/></svg>
+              viento medio
+            </div>
+            <div class="v" id="wx-wind-mean">—</div>
+            <div class="sub" id="wx-wind-dir">—</div>
+          </div>
+          <div class="wx-stat">
+            <div class="l">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h14a3 3 0 100-6M5 16h12a3 3 0 110 6" stroke-linecap="round"/></svg>
+              ráfagas máx.
+            </div>
+            <div class="v" id="wx-gust-max" style="color: var(--accent-warm);">—</div>
+            <div class="sub" id="wx-gust-time">—</div>
+          </div>
+          <div class="wx-stat">
+            <div class="l">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l5 7a5 5 0 11-10 0l5-7z" stroke-linejoin="round"/></svg>
+              humedad
+            </div>
+            <div class="v" id="wx-hum">—</div>
+            <div class="sub">media diaria</div>
+          </div>
+          <div class="wx-stat">
+            <div class="l">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15a4 4 0 014-4 5 5 0 0110 0 4 4 0 010 8H8a4 4 0 01-4-4z" stroke-linejoin="round"/></svg>
+              cobertura nubes
+            </div>
+            <div class="v" id="wx-cloud">—</div>
+            <div class="sub" id="wx-cloud-sub">—</div>
+          </div>
+          <div class="wx-stat">
+            <div class="l">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 14c-2 3-2 5 0 5s2-2 0-5zM12 3v3M5 7l2 2M19 7l-2 2M3 14h3M18 14h3" stroke-linecap="round"/></svg>
+              precipitación
+            </div>
+            <div class="v" id="wx-precip">—</div>
+            <div class="sub" id="wx-precip-sub">—</div>
+          </div>
+          <div class="wx-stat">
+            <div class="l">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="14" r="4"/><path d="M12 4v3M4 14H1M23 14h-3M5.6 7.6l2.1 2.1M16.3 9.7l2.1-2.1M3 19h18" stroke-linecap="round"/></svg>
+              amanece · anochece
+            </div>
+            <div class="v" id="wx-sun">—</div>
+            <div class="sub" id="wx-light">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="wx-chart-wrap">
+        <div class="wx-chart-head">
+          <span class="title" id="wx-chart-title">temperatura horaria</span>
+          <span class="legend">
+            <span><span class="swatch" style="background: var(--moderate);"></span><span id="wx-legend-window">ventana ruta</span></span>
+            <span><span class="swatch" style="background: var(--accent-warm); opacity: 0.7;"></span>°C</span>
+          </span>
+        </div>
+        <div class="wx-chart-svg-wrap">
+          <svg id="wx-chart" class="wx-chart-svg" viewBox="0 0 800 180" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="wx-grad" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="var(--accent-warm)" stop-opacity="0.35"/>
+                <stop offset="100%" stop-color="var(--accent-warm)" stop-opacity="0"/>
+              </linearGradient>
+              <pattern id="wx-grid" width="33.33" height="40" patternUnits="userSpaceOnUse">
+                <path d="M 33.33 0 L 0 0 0 40" fill="none" stroke="var(--border)" stroke-width="0.5" stroke-opacity="0.7"/>
+              </pattern>
+            </defs>
+
+            <rect width="800" height="180" fill="url(#wx-grid)"/>
+
+            <rect id="wx-hike-window" x="0" y="0" width="0" height="180"
+                  fill="var(--moderate)" fill-opacity="0.08" stroke="var(--moderate)"
+                  stroke-opacity="0.35" stroke-width="1" stroke-dasharray="2 3"/>
+
+            <g class="elev-axis-label" id="wx-y-labels"></g>
+            <g class="elev-axis-label">
+              <text x="0" y="174">00 h</text>
+              <text x="200" y="174">06 h</text>
+              <text x="400" y="174">12 h</text>
+              <text x="600" y="174">18 h</text>
+              <text x="780" y="174" text-anchor="end">24 h</text>
+            </g>
+
+            <path id="wx-area" fill="url(#wx-grad)"/>
+            <path id="wx-line" fill="none" stroke="var(--accent-warm)" stroke-width="1.6" stroke-opacity="0.95"/>
+
+            <g id="wx-window-markers"></g>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="wx-empty" id="wx-empty" style="display:none;">
+      No se ha podido recuperar el clima para esta fecha y ubicación.
+    </div>
+  </div>
+</section>
+
+<!-- ===== 05 · NOTAS ===== -->
+<section class="section">
+  <div class="section-head">
+    <div class="section-title-wrap">
+      <div class="section-num">05</div>
+      <h2 class="section-title">Notas y contexto</h2>
+    </div>
+    <div class="section-meta">campo libre · etiquetas internas</div>
+  </div>
+
+  <div class="notes-grid">
+    <div class="notes-card" id="notes-card">
+      <h3>
+        <span class="left">
+          Mis observaciones
+          <span class="num" id="notes-meta">{{ data.notes.updated_str }}</span>
+        </span>
+        {% if current_user and current_user.role in ("admin", "user") %}
+        <span class="actions" id="notes-actions-view">
+          <button class="note-btn" id="btn-edit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            editar
+          </button>
+        </span>
+        {% endif %}
+        <span class="actions" id="notes-actions-edit" style="display:none;">
+          <span class="notes-saved-flash" id="notes-saved-flash">guardado</span>
+          <button class="note-btn ghost" id="btn-cancel">cancelar</button>
+          <button class="note-btn primary" id="btn-save">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            guardar
+          </button>
+        </span>
+      </h3>
+
+      <div id="notes-view">
+        <p class="notes-text" id="notes-text-view">{% if data.notes.text %}{{ data.notes.text }}{% else %}<em class="notes-empty">Aún no hay observaciones · pulsa <strong>editar</strong> para añadir notas.</em>{% endif %}</p>
+        <div class="notes-tags" id="notes-tags-view">
+          {% for t in data.notes.tags %}
+          <span class="notes-tag">{{ t }}</span>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div id="notes-edit" style="display:none;">
+        <textarea class="notes-textarea" id="notes-textarea" placeholder="Escribe tus observaciones de la ruta…">{{ data.notes.text }}</textarea>
+        <div class="notes-tags" id="notes-tags-edit">
+          <input class="notes-tag-input" id="tag-input" type="text" placeholder="+ etiqueta" maxlength="22">
+        </div>
+      </div>
+    </div>
+
+    <div class="notes-card">
+      <h3>Hechos <span class="num">facts</span></h3>
+      <div class="facts-list">
+        {% for row in data.map.info_rows %}
+        <div class="fact-row"><div class="l">{{ row.label }}</div><div class="v">{{ row.value }}</div></div>
+        {% endfor %}
+        <div class="fact-row"><div class="l">temporada</div><div class="v">{{ data.hero.season }}</div></div>
+        <div class="fact-row"><div class="l">fecha</div><div class="v">{{ data.hero.date_str }}</div></div>
+        <div class="fact-row"><div class="l">índice fatiga</div><div class="v" style="color: var(--{{ data.tech.fatigue_level }});">{{ data.tech.fatigue_str }}/10</div></div>
+        <div class="fact-row"><div class="l">puntos GPX</div><div class="v">{{ data.tech.gpx_points | fmt_int }}</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% if data.related %}
+<!-- ===== 06 · RELACIONADAS ===== -->
+<section class="section">
+  <div class="section-head">
+    <div class="section-title-wrap">
+      <div class="section-num">06</div>
+      <h2 class="section-title">Rutas relacionadas</h2>
+    </div>
+    <div class="section-meta"><a href="/rutas">ver todas →</a></div>
+  </div>
+
+  <div class="related-grid">
+    {% for r in data.related %}
+    <a href="/rutas/{{ r.id }}" class="related-card">
+      <div class="top">
+        <div class="name">
+          {{ r.name }}
+          <span class="from">{{ r.origin }}</span>
+        </div>
+        <span class="pill {{ r.level }}">● {{ r.score_str }}</span>
+      </div>
+      <div class="related-mini">
+        <svg viewBox="0 0 800 280" preserveAspectRatio="none">
+          {% if r.area %}<path d="{{ r.area }}" fill="rgba(181,209,122,0.15)"/>{% endif %}
+          {% if r.line %}<path d="{{ r.line }}" fill="none" stroke="var(--{{ r.level }})" stroke-width="1.4"/>{% endif %}
+        </svg>
+      </div>
+      <div class="stats">
+        <span><span class="v">{{ r.km_str }}</span> km</span>
+        <span><span class="v">{{ r.gain_str }}</span> m+</span>
+        <span><span class="v">{{ r.time_str }}</span></span>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if current_user and current_user.role in ("admin", "user") %}
+<!-- ===== Modal eliminar ===== -->
+<div class="modal-backdrop" id="delete-modal" style="display:none;">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Eliminar ruta</h3>
+    </div>
+    <div class="modal-body">
+      <p>¿Seguro que quieres eliminar <strong id="delete-modal-name">{{ data.name }}</strong>?</p>
+      <p class="modal-warn">Se borrarán también el archivo GPX original y todos sus puntos.<br>Esta acción no se puede deshacer.</p>
+    </div>
+    <div class="modal-actions">
+      <button class="note-btn ghost" id="delete-cancel">cancelar</button>
+      <button class="note-btn danger" id="delete-confirm">eliminar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Modal renombrar ===== -->
+<div class="modal-backdrop" id="rename-modal" style="display:none;">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Editar nombre</h3>
+    </div>
+    <div class="modal-body">
+      <input type="text" class="modal-input" id="rename-input" maxlength="120" value="{{ data.name }}">
+      <p class="modal-hint">Original GPX: <code>{{ data.name_original }}</code></p>
+    </div>
+    <div class="modal-actions">
+      <button class="note-btn ghost" id="rename-cancel">cancelar</button>
+      <button class="note-btn primary" id="rename-confirm">guardar</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+window.MENDI_DETAIL = {
+  id: {{ data.id }},
+  name: {{ data.name | tojson }},
+  startedAt: {{ data.started_at_iso | tojson }},
+  summit: { lat: {{ data.summit_lat }}, lon: {{ data.summit_lon }} },
+  track: {{ data.map.track.points | tojson }},
+  bbox: {{ data.map.track.bbox | tojson }},
+  milestones: [
+    {% for m in data.map.milestones %}
+    { kind: {{ m.kind | tojson }}, label: {{ m.label | tojson }}, name: {{ m.name | tojson }},
+      elev: {{ m.elev_m }}, km: {{ m.km }}, time: {{ m.time_str | tojson }} }{% if not loop.last %},{% endif %}
+    {% endfor %}
+  ],
+  elevSamples: {{ data.elev.samples | tojson }},
+  level: {{ data.hero.level | tojson }},
+  notes: {
+    text: {{ data.notes.text | tojson }},
+    tags: {{ data.notes.tags | tojson }}
+  }
+};
+</script>
+{# detail.js se carga globalmente desde base.html #}
+{% endblock %}

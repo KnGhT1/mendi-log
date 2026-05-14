@@ -1,0 +1,469 @@
+{% extends "base.html" %}
+{% block title %}análisis · mendi.log{% endblock %}
+{% block breadcrumb %}análisis{% endblock %}
+{% block footnote_text %}análisis · {{ data.total_sessions }} sesiones · {{ data.total_unique_routes }} rutas únicas{% endblock %}
+
+{% block content %}
+
+{% if not data.has_data %}
+
+  {# ===================== EMPTY STATE ===================== #}
+  <section class="ana-empty">
+    <div class="ana-empty-card">
+      <div class="ana-empty-mark">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M3 20h18M5 20V10M9 20V4M13 20v-7M17 20v-4M21 20v-9" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h2>análisis avanzado</h2>
+      <p>Necesitas al menos {{ 3 }} rutas importadas para que el análisis tenga sentido.</p>
+      <a href="/importar" class="ana-empty-cta">Importar GPX →</a>
+    </div>
+  </section>
+
+{% else %}
+
+{# ============================================================
+   HERO · resumen + chips de rango
+============================================================ #}
+<section class="page-head">
+  <div class="page-head-grid"></div>
+  <div class="page-head-content">
+    <div>
+      <div class="page-eyebrow">visión global</div>
+      <h1 class="page-title">An<em>álisis</em></h1>
+      <p class="ana-sub">{{ data.range_label }} · {{ data.total_sessions }} sesiones · {{ data.total_unique_routes }} rutas únicas</p>
+    </div>
+    <div class="ana-range" data-current="{{ data.range_key }}">
+      {% for chip in data.range_chips %}
+        {% if chip.key == 'temporada' %}
+          <select id="ana-season-select"
+                  class="ana-chip ana-chip-select {% if chip.selected %}is-on{% endif %}"
+                  data-range="temporada">
+            <option value="" {% if not chip.selected %}selected{% endif %}>temporada…</option>
+            <option value="spring" {% if data.range_key == 'spring' %}selected{% endif %}>primavera</option>
+            <option value="summer" {% if data.range_key == 'summer' %}selected{% endif %}>verano</option>
+            <option value="autumn" {% if data.range_key == 'autumn' %}selected{% endif %}>otoño</option>
+            <option value="winter" {% if data.range_key == 'winter' %}selected{% endif %}>invierno</option>
+          </select>
+        {% else %}
+          <button type="button"
+                  class="ana-chip {% if chip.selected %}is-on{% endif %}"
+                  data-range="{{ chip.key }}">{{ chip.label }}</button>
+        {% endif %}
+      {% endfor %}
+      <div class="ana-range-custom {% if data.range_key == 'custom' %}is-on{% endif %}">
+        <input type="date" id="ana-from" value="{{ data.from_date or '' }}">
+        <span class="ana-range-sep">→</span>
+        <input type="date" id="ana-to" value="{{ data.to_date or '' }}">
+        <button type="button" id="ana-range-apply" class="ana-range-apply">aplicar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="ana-hero-stats" id="ana-hero-stats">
+    {% for s in data.hero_stats %}
+    <div class="ana-stat">
+      <div class="ana-stat-label">{{ s.label }}</div>
+      <div class="ana-stat-value">{{ s.value }}<span class="ana-stat-unit">{{ s.unit }}</span></div>
+      <div class="ana-stat-detail">{{ s.detail }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{# ============================================================
+   01 · MAPA DE CALOR + ZONAS
+============================================================ #}
+<section class="section">
+  <div class="section-head">
+    <div class="section-title-wrap">
+      <div class="section-num">01</div>
+      <h2 class="section-title">Mapa de Calor</h2>
+    </div>
+    <div class="section-meta">distribución geográfica de tus salidas</div>
+  </div>
+
+  <div class="ana-heatmap-grid">
+    <div class="ana-heatmap-wrap">
+      <div id="ana-heatmap" class="ana-heatmap"></div>
+      <div class="ana-heatmap-legend">
+        <span>menos</span>
+        <span class="ana-heatmap-bar"></span>
+        <span>más visitada</span>
+      </div>
+    </div>
+    <aside class="ana-zones" id="ana-zones">
+      <div class="ana-zones-head">zonas frecuentes</div>
+      {% for z in data.zones %}
+      <div class="ana-zone-row">
+        <span class="ana-zone-dot {{ z.css_class }}"></span>
+        <span class="ana-zone-name">{{ z.name }}</span>
+        <span class="ana-zone-count">{{ z.count }}</span>
+        <span class="ana-zone-pct">{{ z.pct }}%</span>
+      </div>
+      {% endfor %}
+    </aside>
+  </div>
+</section>
+
+{# ============================================================
+   02 · PATRONES (5 mini-tarjetas)
+============================================================ #}
+<section class="section">
+  <div class="section-head">
+    <div class="section-title-wrap">
+      <div class="section-num">02</div>
+      <h2 class="section-title">Patrones</h2>
+    </div>
+    <div class="section-meta">cómo te mueves a lo largo del tiempo</div>
+  </div>
+
+  <div class="ana-patterns">
+    {# A · ratio repetidas vs nuevas #}
+    <article class="ana-card ana-card-ratio">
+      <div class="ana-card-eyebrow">A · ratio</div>
+      <h3>repetidas vs nuevas</h3>
+      <div class="ana-ratio">
+        <svg id="ana-ratio-donut" viewBox="0 0 120 120" class="ana-ratio-donut"></svg>
+        <ul class="ana-ratio-legend" id="ana-ratio-legend">
+          {% for p in data.ratio %}
+          <li>
+            <span class="ana-ratio-dot ana-ratio-{{ p.css_class }}"></span>
+            <span class="ana-ratio-label">{{ p.label }}</span>
+            <span class="ana-ratio-value">{{ p.value }}</span>
+            <span class="ana-ratio-pct">{{ p.pct }}%</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </article>
+
+    {# B · racha #}
+    <article class="ana-card ana-card-streak">
+      <div class="ana-card-eyebrow">B · constancia</div>
+      <h3>racha activa</h3>
+      <div class="ana-streak-big">
+        <div>
+          <div class="ana-streak-num">{{ data.streak.current }}</div>
+          <div class="ana-streak-cap">semanas seguidas</div>
+        </div>
+        <div class="ana-streak-best">mejor: {{ data.streak.best }} sem</div>
+      </div>
+      <svg id="ana-streak-spark" viewBox="0 0 240 60" class="ana-streak-spark"></svg>
+      <div class="ana-streak-foot">media últimas 4 sem · <strong>{{ data.streak.last4_avg_km }} km</strong></div>
+    </article>
+
+    {# G · descubrimiento #}
+    <article class="ana-card ana-card-disc">
+      <div class="ana-card-eyebrow">G · descubrimiento</div>
+      <h3>nuevas rutas / mes</h3>
+      <svg id="ana-disc-line" viewBox="0 0 240 90" class="ana-disc-line"></svg>
+      <div class="ana-disc-foot">12 meses · una entrada por <em>ruta única</em></div>
+    </article>
+
+    {# C · top10 #}
+    <article class="ana-card ana-card-top">
+      <div class="ana-card-eyebrow">C · ranking</div>
+      <h3>tus rutas más repetidas</h3>
+      <ol class="ana-top10" id="ana-top10">
+        {% for t in data.top_routes %}
+        <li class="ana-top-row">
+          <div class="ana-top-head">
+            <span class="ana-top-rank">{{ "%02d"|format(t.rank) }}</span>
+            <div class="ana-top-id">
+              <div class="ana-top-name">{{ t.name }}</div>
+              <div class="ana-top-meta">{{ t.origin }} · desde {{ t.first_year }}</div>
+            </div>
+            <div class="ana-top-reps-wrap">
+              <span class="ana-top-reps">×{{ t.reps }}</span>
+              <span class="ana-top-reps-cap">repeticiones</span>
+            </div>
+          </div>
+          <div class="ana-top-bar"><span style="width:{{ t.bar_pct }}%"></span></div>
+          <div class="ana-top-stats">
+            <span class="ana-top-stat" title="distancia acumulada en todas las repeticiones">
+              <i class="ana-top-stat-ico">Σ</i>{{ t.total_km }}<em>km</em>
+            </span>
+            <span class="ana-top-stat" title="desnivel + medio por sesión">
+              ↑ {{ t.avg_gain }}<em>m</em>
+            </span>
+            <span class="ana-top-stat" title="tiempo medio en movimiento">
+              ⏱ {{ t.duration_avg }}
+            </span>
+            <span class="ana-top-stat ana-top-level ana-top-level-{{ t.level }}" title="dificultad media">
+              {{ t.level_label }} · {{ t.score }}
+            </span>
+            <span class="ana-top-stat ana-top-stat-when" title="última vez que la pisaste">
+              hace {{ t.days_since }} d · {{ t.last_date_str }}
+            </span>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </article>
+
+    {# E · dormidas #}
+    <article class="ana-card ana-card-dorm">
+      <div class="ana-card-eyebrow">E · dormidas</div>
+      <h3>te están esperando</h3>
+      <ul class="ana-dorm" id="ana-dorm">
+        {% for d in data.dormidas %}
+        <li>
+          <div class="ana-dorm-name">{{ d.name }}</div>
+          <div class="ana-dorm-meta">{{ d.origin }} · {{ d.distance_km }} km</div>
+          <div class="ana-dorm-foot"><strong>{{ d.days_since }}</strong> días · última: {{ d.last_date_str }}</div>
+        </li>
+        {% endfor %}
+      </ul>
+    </article>
+  </div>
+</section>
+
+{# ============================================================
+   03 · EVOLUCIÓN MENSUAL
+============================================================ #}
+<section class="section">
+  <div class="section-head">
+    <div class="section-title-wrap">
+      <div class="section-num">03</div>
+      <h2 class="section-title">Evolución mensual</h2>
+    </div>
+    <div class="section-meta">sesiones vs rutas únicas · últimos 14 meses</div>
+  </div>
+
+  <div class="ana-evo-card">
+    <div class="ana-evo-legend">
+      <span><i class="ana-evo-dot ana-evo-sessions"></i> sesiones</span>
+      <span><i class="ana-evo-dot ana-evo-unique"></i> rutas únicas</span>
+    </div>
+    <div class="ana-evo" id="ana-evo">
+      {% for m in data.monthly %}
+      <div class="ana-evo-col" title="{{ m.label }} · {{ m.sessions }} sesiones · {{ m.unique_routes }} únicas">
+        <div class="ana-evo-bars">
+          <span class="ana-evo-bar ana-evo-bar-sessions" style="height:{{ m.sessions_h }}%"></span>
+          <span class="ana-evo-bar ana-evo-bar-unique"   style="height:{{ m.unique_h }}%"></span>
+        </div>
+        <div class="ana-evo-lbl">{{ m.label }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+{# ============================================================
+   04 · DISTRIBUCIÓN (dos donuts: dificultad y distancia)
+============================================================ #}
+<section class="section">
+  <div class="section-head">
+    <div class="section-title-wrap">
+      <div class="section-num">04</div>
+      <h2 class="section-title">Distribución</h2>
+    </div>
+    <div class="section-meta">cómo se reparten tus salidas</div>
+  </div>
+
+  <div class="ana-donuts">
+    <article class="ana-card ana-donut-card">
+      <h3>por dificultad</h3>
+      <div class="ana-donut-row">
+        <svg id="ana-donut-diff" viewBox="0 0 140 140" class="ana-donut"></svg>
+        <ul class="ana-donut-legend">
+          {% for p in data.donut_difficulty %}
+          <li>
+            <span class="ana-donut-dot ana-donut-{{ p.css_class }}"></span>
+            <span class="ana-donut-label">{{ p.label }}</span>
+            <span class="ana-donut-value">{{ p.value }}</span>
+            <span class="ana-donut-pct">{{ p.pct }}%</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div class="ana-donut-foot">total · {{ data.donut_difficulty_total }} sesiones</div>
+    </article>
+
+    <article class="ana-card ana-donut-card">
+      <h3>por distancia</h3>
+      <div class="ana-donut-row">
+        <svg id="ana-donut-dist" viewBox="0 0 140 140" class="ana-donut"></svg>
+        <ul class="ana-donut-legend">
+          {% for p in data.donut_distance %}
+          <li>
+            <span class="ana-donut-dot ana-donut-{{ p.css_class }}"></span>
+            <span class="ana-donut-label">{{ p.label }}</span>
+            <span class="ana-donut-value">{{ p.value }}</span>
+            <span class="ana-donut-pct">{{ p.pct }}%</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div class="ana-donut-foot">total · {{ data.donut_distance_total }} sesiones</div>
+    </article>
+  </div>
+</section>
+
+{# ============================================================
+   05 · SCATTER · km vs desnivel +
+============================================================ #}
+<section class="section">
+  <div class="section-head">
+    <div class="section-title-wrap">
+      <div class="section-num">05</div>
+      <h2 class="section-title">Kilómetros vs Desnivel</h2>
+    </div>
+    <div class="section-meta">cada punto es una sesión, color = dificultad</div>
+  </div>
+
+  <div class="ana-scatter-card">
+    <svg id="ana-scatter" viewBox="0 0 800 360" class="ana-scatter"></svg>
+    <div class="ana-scatter-legend">
+      <span><i class="ana-dot ana-dot-easy"></i> fácil</span>
+      <span><i class="ana-dot ana-dot-moderate"></i> moderada</span>
+      <span><i class="ana-dot ana-dot-hard"></i> difícil</span>
+      <span><i class="ana-dot ana-dot-very-hard"></i> muy difícil</span>
+    </div>
+  </div>
+</section>
+
+{# ============================================================
+   06 · RECORDS
+============================================================ #}
+<section class="section">
+  <div class="section-head">
+    <div class="section-title-wrap">
+      <div class="section-num">06</div>
+      <h2 class="section-title">Récords Personales</h2>
+    </div>
+    <div class="section-meta">los extremos de tu archivo</div>
+  </div>
+
+  <div class="ana-records" id="ana-records">
+    {% for r in data.records %}
+    <article class="ana-rec ana-rec-{{ r.css_class }}">
+      <div class="ana-rec-label">{{ r.label }}</div>
+      <div class="ana-rec-value">{{ r.value }}<span class="ana-rec-unit">{{ r.unit }}</span></div>
+      <div class="ana-rec-detail">{{ r.detail }}</div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+{# ============================================================
+   07 · CALENDARIO HEATMAP
+============================================================ #}
+<section class="section">
+  <div class="section-head">
+    <div class="section-title-wrap">
+      <div class="section-num">07</div>
+      <h2 class="section-title">Calendario</h2>
+    </div>
+    <div class="section-meta">actividad diaria · color por kilómetros</div>
+  </div>
+
+  <div class="ana-cal-wrap" id="ana-calendar">
+    <div class="ana-cal-scroll">
+      {% for cy in data.calendar %}
+      <div class="ana-cal-year">
+        <div class="ana-cal-year-label">{{ cy.year }}</div>
+        <div class="ana-cal-months">
+          {% for m in cy.months %}
+          <div class="ana-cal-month">
+            <div class="ana-cal-month-label">{{ m.label }}</div>
+            <div class="ana-cal-grid">
+              {% for week in m.weeks %}
+              <div class="ana-cal-week">
+                {% for cell in week %}
+                <span class="ana-cal-cell {{ cell.level }}" title="{{ cell.title }}"></span>
+                {% endfor %}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="ana-cal-legend">
+      <span>menos</span>
+      <span class="ana-cal-cell"></span>
+      <span class="ana-cal-cell lvl1"></span>
+      <span class="ana-cal-cell lvl2"></span>
+      <span class="ana-cal-cell lvl3"></span>
+      <span class="ana-cal-cell lvl4"></span>
+      <span>más km</span>
+    </div>
+  </div>
+</section>
+
+{# ============================================================
+   08 · COMPARADOR
+============================================================ #}
+<section class="section">
+  <div class="section-head">
+    <div class="section-title-wrap">
+      <div class="section-num">08</div>
+      <h2 class="section-title">Comparador</h2>
+    </div>
+    <div class="section-meta">elige dos rutas únicas y enfréntalas</div>
+  </div>
+
+  <div class="ana-cmp">
+    <div class="ana-cmp-pickers">
+      <div class="ana-cmp-picker">
+        <span class="ana-cmp-pin ana-cmp-pin-A">A</span>
+        <div class="ana-combo" data-side="A">
+          <input type="text" class="ana-combo-input" placeholder="busca ruta A..." autocomplete="off">
+          <div class="ana-combo-list"></div>
+        </div>
+      </div>
+      <div class="ana-cmp-vs">vs</div>
+      <div class="ana-cmp-picker">
+        <span class="ana-cmp-pin ana-cmp-pin-B">B</span>
+        <div class="ana-combo" data-side="B">
+          <input type="text" class="ana-combo-input" placeholder="busca ruta B..." autocomplete="off">
+          <div class="ana-combo-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ana-cmp-chart-card">
+      <div class="ana-cmp-chart-head">
+        <div class="ana-cmp-chart-title">perfil superpuesto</div>
+        <div class="ana-cmp-chart-legend" id="ana-cmp-legend">
+          <span class="ana-cmp-leg ana-cmp-leg-A"><i></i><strong data-side="A">A</strong></span>
+          <span class="ana-cmp-leg ana-cmp-leg-B"><i></i><strong data-side="B">B</strong></span>
+        </div>
+      </div>
+      <svg id="ana-cmp-overlay" viewBox="0 0 800 260" class="ana-cmp-overlay"></svg>
+      <div class="ana-cmp-axes">
+        <span>0 km</span>
+        <span id="ana-cmp-mid-km">— km</span>
+        <span id="ana-cmp-max-km">— km</span>
+      </div>
+    </div>
+
+    <div class="ana-cmp-table" id="ana-cmp-table">
+      <div class="ana-cmp-row ana-cmp-row-head">
+        <div></div>
+        <div class="ana-cmp-col ana-cmp-col-A">A</div>
+        <div class="ana-cmp-col ana-cmp-col-B">B</div>
+      </div>
+      <div class="ana-cmp-row" data-metric="distance"><div class="ana-cmp-lbl">distancia</div><div class="ana-cmp-val ana-cmp-A">—</div><div class="ana-cmp-val ana-cmp-B">—</div></div>
+      <div class="ana-cmp-row" data-metric="gain"><div class="ana-cmp-lbl">desnivel +</div><div class="ana-cmp-val ana-cmp-A">—</div><div class="ana-cmp-val ana-cmp-B">—</div></div>
+      <div class="ana-cmp-row" data-metric="score"><div class="ana-cmp-lbl">dificultad</div><div class="ana-cmp-val ana-cmp-A">—</div><div class="ana-cmp-val ana-cmp-B">—</div></div>
+      <div class="ana-cmp-row" data-metric="duration"><div class="ana-cmp-lbl">tiempo</div><div class="ana-cmp-val ana-cmp-A">—</div><div class="ana-cmp-val ana-cmp-B">—</div></div>
+      <div class="ana-cmp-row" data-metric="pace"><div class="ana-cmp-lbl">ritmo</div><div class="ana-cmp-val ana-cmp-A">—</div><div class="ana-cmp-val ana-cmp-B">—</div></div>
+      <div class="ana-cmp-row" data-metric="alt"><div class="ana-cmp-lbl">altitud</div><div class="ana-cmp-val ana-cmp-A">—</div><div class="ana-cmp-val ana-cmp-B">—</div></div>
+    </div>
+  </div>
+</section>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts_extra %}
+{% if data.has_data %}
+<script id="ana-payload" type="application/json">{{ payload_json|safe }}</script>
+{% endif %}
+{% endblock %}

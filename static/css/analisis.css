@@ -1,0 +1,721 @@
+/* ============================================================
+   ANÁLISIS — estética 1:1 con el mockup analisis-mockup.html
+   Hereda paleta y tipos de styles.css. Aquí solo lo específico
+   de las 8 secciones (heatmap, patrones, evolución, donuts,
+   scatter, records, calendario, comparador).
+   ============================================================ */
+
+[data-page="analisis"] {
+  --heat-cell-0: var(--surface-2, #1c2026);
+  --heat-cell-1: rgba(125, 175, 201, 0.45);
+  --heat-cell-2: rgba(181, 209, 122, 0.55);
+  --heat-cell-3: rgba(232, 184, 109, 0.70);
+  --heat-cell-4: rgba(228, 120, 98, 0.85);
+}
+
+[data-theme="light"] [data-page="analisis"] {
+  --heat-cell-0: rgba(0, 0, 0, 0.05);
+  --heat-cell-1: rgba(125, 175, 201, 0.35);
+  --heat-cell-2: rgba(181, 209, 122, 0.55);
+  --heat-cell-3: rgba(232, 184, 109, 0.75);
+  --heat-cell-4: rgba(228, 120, 98, 0.95);
+}
+
+/* ===================== EMPTY ===================== */
+.ana-empty {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 60vh;
+}
+.ana-empty-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 48px 56px;
+  text-align: center;
+  max-width: 440px;
+}
+.ana-empty-mark {
+  width: 64px; height: 64px; margin: 0 auto 18px;
+  border-radius: 16px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.04));
+  display: grid; place-items: center;
+  color: var(--accent);
+}
+.ana-empty h2 { font-family: var(--font-serif); font-weight: 400; font-size: 28px; margin: 0 0 8px; }
+.ana-empty p  { color: var(--text-dim); margin: 0 0 22px; }
+.ana-empty-cta {
+  display: inline-block; padding: 10px 18px;
+  background: var(--accent); color: #1a1a1a;
+  border-radius: 999px; text-decoration: none; font-weight: 600;
+}
+
+/* ===================== HERO ===================== */
+/* Reutiliza .page-head de styles.css. Solo ajustes específicos de análisis. */
+.page-head .ana-range {
+  display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+  margin-top: 8px;
+}
+.ana-sub { color: var(--text-dim); margin: 4px 0 0; font-size: 13px; }
+
+.ana-range {
+  display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+}
+.ana-chip {
+  font-family: var(--font-mono); font-size: 11px;
+  padding: 6px 12px; border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  cursor: pointer; transition: all .15s ease;
+}
+.ana-chip:hover { color: var(--text); border-color: var(--accent); }
+.ana-chip.is-on {
+  background: var(--accent); color: #1a1a1a;
+  border-color: var(--accent); font-weight: 600;
+}
+.ana-chip-select {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  padding-right: 26px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) center,
+    calc(100% - 9px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.ana-chip-select:focus { outline: none; }
+.ana-chip-select option {
+  background: var(--surface); color: var(--text);
+}
+.ana-range-custom {
+  display: none; gap: 6px; align-items: center;
+  margin-left: 8px;
+}
+.ana-range-custom.is-on { display: inline-flex; }
+.ana-range-custom input[type="date"] {
+  font-family: var(--font-mono); font-size: 11px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px; padding: 5px 8px;
+  color: var(--text);
+  color-scheme: dark;
+}
+[data-theme="light"] .ana-range-custom input[type="date"] { color-scheme: light; }
+.ana-range-sep { color: var(--text-dim); font-family: var(--font-mono); font-size: 11px; }
+.ana-range-apply {
+  padding: 5px 10px; border-radius: 6px;
+  background: var(--surface-2, rgba(255,255,255,0.05));
+  border: 1px solid var(--border); color: var(--text);
+  font-family: var(--font-mono); font-size: 11px; cursor: pointer;
+}
+.ana-range-apply:hover { border-color: var(--accent); color: var(--accent); }
+
+.ana-hero-stats {
+  display: grid; grid-template-columns: repeat(6, 1fr);
+  gap: 18px; margin-top: 28px; padding-bottom: 28px;
+}
+@media (max-width: 1100px) { .ana-hero-stats { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 640px)  { .ana-hero-stats { grid-template-columns: repeat(2, 1fr); } }
+.ana-stat {
+  border-left: 2px solid var(--accent);
+  padding: 4px 0 4px 14px;
+}
+.ana-stat-label {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-dim);
+}
+.ana-stat-value {
+  font-family: var(--font-serif); font-weight: 400; font-size: 32px;
+  line-height: 1.1; margin-top: 2px;
+}
+.ana-stat-unit {
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-dim);
+  margin-left: 4px;
+}
+.ana-stat-detail {
+  font-size: 12px; color: var(--text-dim); margin-top: 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ===================== SECCIÓN GENÉRICA ===================== */
+/* Reutiliza .section y .section-head de styles.css. */
+.ana-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 18px;
+}
+.ana-card h3 {
+  margin: 0 0 12px; font-family: var(--serif); font-weight: 400;
+  font-size: 18px;
+}
+.ana-card-eyebrow {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--accent); margin-bottom: 4px;
+}
+
+/* ===================== 01 · HEATMAP ===================== */
+.ana-heatmap-grid {
+  display: grid; grid-template-columns: 1fr 280px; gap: 18px;
+}
+@media (max-width: 980px) { .ana-heatmap-grid { grid-template-columns: 1fr; } }
+.ana-heatmap-wrap {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; overflow: hidden; position: relative;
+}
+.ana-heatmap {
+  width: 100%; height: 460px; background: var(--surface-2, #11151a);
+  min-height: 260px;
+}
+.ana-heatmap-legend {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+  border-top: 1px solid var(--border);
+}
+.ana-heatmap-bar {
+  flex: 1; height: 8px; border-radius: 4px;
+  background: linear-gradient(to right, #7DAFC9, #B5D17A, #E8B86D, #E47862);
+}
+.ana-zones {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 16px 18px;
+}
+.ana-zones-head {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--text-dim);
+  margin-bottom: 10px;
+}
+.ana-zone-row {
+  display: grid; grid-template-columns: 14px 1fr auto auto;
+  gap: 10px; align-items: center;
+  padding: 8px 0; border-bottom: 1px dashed var(--border);
+}
+.ana-zone-row:last-child { border-bottom: none; }
+.ana-zone-dot { width: 10px; height: 10px; border-radius: 3px; }
+.ana-zone-dot.heat-1 { background: var(--heat-cell-1); }
+.ana-zone-dot.heat-2 { background: var(--heat-cell-2); }
+.ana-zone-dot.heat-3 { background: var(--heat-cell-3); }
+.ana-zone-dot.heat-4 { background: var(--heat-cell-4); }
+.ana-zone-name { font-size: 13px; }
+.ana-zone-count { font-family: var(--font-mono); font-size: 13px; color: var(--text); }
+.ana-zone-pct   { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+
+/* ===================== 02 · PATRONES ===================== */
+.ana-patterns {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: auto auto;
+  gap: 18px;
+}
+.ana-card-ratio  { grid-column: 1; grid-row: 1; }
+.ana-card-streak { grid-column: 2; grid-row: 1; }
+.ana-card-disc   { grid-column: 3; grid-row: 1; }
+.ana-card-top    { grid-column: 1 / span 2; grid-row: 2; }
+.ana-card-dorm   { grid-column: 3; grid-row: 2; }
+@media (max-width: 980px) {
+  .ana-patterns { grid-template-columns: 1fr; }
+  .ana-card-ratio, .ana-card-streak, .ana-card-disc,
+  .ana-card-top, .ana-card-dorm {
+    grid-column: 1; grid-row: auto;
+  }
+}
+
+/* A · ratio */
+.ana-ratio { display: grid; grid-template-columns: 120px 1fr; gap: 16px; align-items: center; }
+.ana-ratio-donut { width: 120px; height: 120px; }
+.ana-ratio-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.ana-ratio-legend li {
+  display: grid; grid-template-columns: 14px 1fr auto auto; gap: 8px;
+  align-items: center; font-size: 13px;
+}
+.ana-ratio-dot { width: 10px; height: 10px; border-radius: 3px; }
+.ana-ratio-warm   { background: var(--accent-warm, #E8B86D); }
+.ana-ratio-accent { background: var(--accent, #B5D17A); }
+.ana-ratio-cool   { background: var(--accent-cool, #7DAFC9); }
+.ana-ratio-value { font-family: var(--font-mono); font-size: 13px; }
+.ana-ratio-pct   { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+
+/* B · streak */
+.ana-streak-big {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin: 4px 0 12px;
+}
+.ana-streak-num {
+  font-family: var(--font-serif); font-weight: 400; font-size: 56px;
+  line-height: 1; color: var(--accent);
+}
+.ana-streak-cap {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-dim);
+}
+.ana-streak-best {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+}
+.ana-streak-spark {
+  width: 100%; height: 60px;
+  background: var(--surface-2, rgba(255,255,255,0.03));
+  border-radius: 8px;
+}
+.ana-streak-foot {
+  margin-top: 10px; font-size: 12px; color: var(--text-dim);
+}
+.ana-streak-foot strong { color: var(--text); font-family: var(--font-mono); }
+
+/* G · descubrimiento */
+.ana-disc-line {
+  width: 100%; height: 90px;
+  background: var(--surface-2, rgba(255,255,255,0.03));
+  border-radius: 8px;
+}
+.ana-disc-foot {
+  margin-top: 10px; font-size: 12px; color: var(--text-dim);
+}
+
+/* C · top10 */
+.ana-top10 {
+  list-style: none; margin: 0; padding: 0; display: grid; gap: 14px;
+}
+.ana-top-row {
+  display: grid; gap: 10px;
+  padding: 12px 0; border-bottom: 1px dashed var(--border);
+}
+.ana-top-row:last-child { border-bottom: none; }
+.ana-top-head {
+  display: grid; grid-template-columns: 32px 1fr auto;
+  gap: 12px; align-items: center;
+}
+.ana-top-rank {
+  font-family: var(--font-mono); font-size: 14px;
+  color: var(--text-dim); text-align: center;
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 0;
+}
+.ana-top-id { min-width: 0; }
+.ana-top-name {
+  font-family: var(--font-serif); font-size: 16px; line-height: 1.2;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ana-top-meta {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+  margin-top: 2px;
+}
+.ana-top-reps-wrap {
+  text-align: right;
+}
+.ana-top-reps {
+  font-family: var(--font-serif); font-size: 24px; color: var(--accent);
+  display: block; line-height: 1;
+}
+.ana-top-reps-cap {
+  font-family: var(--font-mono); font-size: 9px;
+  letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-dim);
+}
+.ana-top-bar {
+  height: 4px; border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+[data-theme="light"] .ana-top-bar { background: rgba(0, 0, 0, 0.06); }
+.ana-top-bar > span {
+  display: block; height: 100%;
+  background: linear-gradient(to right, var(--accent), var(--accent-warm, #E8B86D));
+}
+.ana-top-stats {
+  display: flex; flex-wrap: wrap; gap: 6px 14px;
+  margin-top: 4px;
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text);
+}
+.ana-top-stat {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.ana-top-stat em {
+  font-style: normal; color: var(--text-dim); margin-left: 2px;
+}
+.ana-top-stat-ico {
+  font-family: var(--font-serif); font-style: italic;
+  color: var(--accent); font-size: 13px;
+}
+.ana-top-stat-when { color: var(--text-dim); margin-left: auto; }
+.ana-top-level {
+  padding: 1px 8px; border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 10px; letter-spacing: .04em;
+}
+.ana-top-level-easy      { color: var(--easy,      #7DAFC9); border-color: rgba(125, 175, 201, 0.4); }
+.ana-top-level-moderate  { color: var(--moderate,  #B5D17A); border-color: rgba(181, 209, 122, 0.4); }
+.ana-top-level-hard      { color: var(--hard,      #E8B86D); border-color: rgba(232, 184, 109, 0.4); }
+.ana-top-level-very-hard { color: var(--very-hard, #E47862); border-color: rgba(228, 120, 98, 0.4); }
+
+/* E · dormidas */
+.ana-dorm { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.ana-dorm li {
+  padding: 10px 0; border-bottom: 1px dashed var(--border);
+}
+.ana-dorm li:last-child { border-bottom: none; }
+.ana-dorm-name { font-size: 13px; }
+.ana-dorm-meta {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+  margin-top: 2px;
+}
+.ana-dorm-foot {
+  margin-top: 4px; font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-dim);
+}
+.ana-dorm-foot strong { color: var(--accent-warm, #E8B86D); font-size: 13px; }
+
+/* ===================== 03 · EVOLUCIÓN ===================== */
+.ana-evo-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 18px;
+}
+.ana-evo-legend {
+  display: flex; gap: 18px; margin-bottom: 14px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+}
+.ana-evo-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.ana-evo-dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.ana-evo-sessions { background: var(--accent); }
+.ana-evo-unique   { background: var(--accent-cool, #7DAFC9); }
+.ana-evo {
+  display: grid; grid-template-columns: repeat(14, 1fr);
+  gap: 6px; align-items: end; height: 200px;
+}
+.ana-evo-col {
+  display: grid; grid-template-rows: 1fr auto;
+  gap: 6px; height: 100%; cursor: default;
+}
+.ana-evo-bars {
+  display: flex; gap: 3px; align-items: end; height: 100%;
+  justify-content: center;
+}
+.ana-evo-bar { flex: 1; min-height: 2px; border-radius: 2px 2px 0 0; max-width: 14px; }
+.ana-evo-bar-sessions { background: var(--accent); }
+.ana-evo-bar-unique   { background: var(--accent-cool, #7DAFC9); opacity: .85; }
+.ana-evo-lbl {
+  font-family: var(--font-mono); font-size: 9px; color: var(--text-dim);
+  text-align: center; white-space: nowrap;
+}
+
+/* ===================== 04 · DONUTS ===================== */
+.ana-donuts {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+}
+@media (max-width: 900px) { .ana-donuts { grid-template-columns: 1fr; } }
+.ana-donut-card {}
+.ana-donut-row {
+  display: grid; grid-template-columns: 140px 1fr; gap: 18px; align-items: center;
+}
+.ana-donut { width: 140px; height: 140px; }
+.ana-donut-legend {
+  list-style: none; margin: 0; padding: 0; display: grid; gap: 8px;
+}
+.ana-donut-legend li {
+  display: grid; grid-template-columns: 12px 1fr auto auto; gap: 8px;
+  align-items: center; font-size: 13px;
+}
+.ana-donut-dot { width: 10px; height: 10px; border-radius: 3px; }
+.ana-donut-easy      { background: var(--easy,      #7DAFC9); }
+.ana-donut-moderate  { background: var(--moderate,  #B5D17A); }
+.ana-donut-hard      { background: var(--hard,      #E8B86D); }
+.ana-donut-very-hard { background: var(--very-hard, #E47862); }
+.ana-donut-value { font-family: var(--font-mono); font-size: 13px; }
+.ana-donut-pct   { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+.ana-donut-foot {
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px dashed var(--border);
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+}
+
+/* ===================== 05 · SCATTER ===================== */
+.ana-scatter-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 18px;
+}
+.ana-scatter { width: 100%; height: 360px; display: block; overflow: hidden; }
+.ana-scatter-legend {
+  display: flex; gap: 18px; margin-top: 12px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+}
+.ana-scatter-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.ana-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.ana-dot-easy      { background: var(--easy,      #7DAFC9); }
+.ana-dot-moderate  { background: var(--moderate,  #B5D17A); }
+.ana-dot-hard      { background: var(--hard,      #E8B86D); }
+.ana-dot-very-hard { background: var(--very-hard, #E47862); }
+.ana-scatter .grid line {
+  stroke: var(--border); stroke-dasharray: 2 4; stroke-width: 1;
+}
+.ana-scatter .axis text {
+  font-family: var(--font-mono); font-size: 10px; fill: var(--text-dim);
+}
+
+/* ===================== 06 · RECORDS ===================== */
+.ana-records {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px;
+}
+@media (max-width: 900px) { .ana-records { grid-template-columns: repeat(2, 1fr); } }
+.ana-rec {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 22px;
+  position: relative; overflow: hidden;
+}
+.ana-rec::before {
+  content: ""; position: absolute; left: 0; top: 0;
+  width: 4px; height: 100%;
+}
+.ana-rec-warm::before    { background: var(--accent-warm, #E8B86D); }
+.ana-rec-accent::before  { background: var(--accent,      #B5D17A); }
+.ana-rec-cool::before    { background: var(--accent-cool, #7DAFC9); }
+.ana-rec-danger::before  { background: var(--danger,      #E47862); }
+.ana-rec-label {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--text-dim);
+}
+.ana-rec-value {
+  font-family: var(--font-serif); font-weight: 400; font-size: 40px;
+  line-height: 1.05; margin: 6px 0 4px;
+}
+.ana-rec-warm   .ana-rec-value { color: var(--accent-warm, #E8B86D); }
+.ana-rec-accent .ana-rec-value { color: var(--accent,      #B5D17A); }
+.ana-rec-cool   .ana-rec-value { color: var(--accent-cool, #7DAFC9); }
+.ana-rec-danger .ana-rec-value { color: var(--danger,      #E47862); }
+.ana-rec-unit {
+  font-family: var(--font-mono); font-size: 14px; color: var(--text-dim);
+  margin-left: 4px;
+}
+.ana-rec-detail {
+  font-size: 13px; color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ===================== 07 · CALENDARIO ===================== */
+.ana-cal-wrap {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 22px;
+  display: grid; gap: 14px;
+}
+.ana-cal-scroll {
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 8px;
+  display: grid;
+  gap: 18px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-2, var(--border)) transparent;
+}
+.ana-cal-scroll::-webkit-scrollbar { width: 8px; }
+.ana-cal-scroll::-webkit-scrollbar-track { background: transparent; }
+.ana-cal-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-2, var(--border));
+  border-radius: 4px;
+}
+.ana-cal-year + .ana-cal-year {
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+.ana-cal-year-label {
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--accent);
+  margin-bottom: 8px;
+}
+.ana-cal-months {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(64px, 1fr));
+  gap: 4px;
+}
+@media (max-width: 1100px) { .ana-cal-months { grid-template-columns: repeat(6, minmax(64px, 1fr)); gap: 6px; } }
+@media (max-width: 640px)  { .ana-cal-months { grid-template-columns: repeat(3, minmax(64px, 1fr)); gap: 8px; } }
+.ana-cal-month {
+  min-width: 0;
+}
+.ana-cal-month-label {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.ana-cal-grid {
+  display: flex; gap: 2px;
+}
+.ana-cal-week {
+  display: grid; grid-template-rows: repeat(7, 1fr); gap: 2px;
+}
+.ana-cal-cell {
+  display: block; width: 9px; height: 9px;
+  border-radius: 2px;
+  background: var(--heat-cell-0);
+}
+.ana-cal-cell.lvl1 { background: var(--heat-cell-1); }
+.ana-cal-cell.lvl2 { background: var(--heat-cell-2); }
+.ana-cal-cell.lvl3 { background: var(--heat-cell-3); }
+.ana-cal-cell.lvl4 { background: var(--heat-cell-4); }
+.ana-cal-legend {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 4px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+}
+
+/* ===================== 08 · COMPARADOR (unificado) ===================== */
+.ana-cmp {
+  display: grid; gap: 18px;
+}
+.ana-cmp-pickers {
+  display: grid; grid-template-columns: 1fr 60px 1fr; gap: 14px;
+  align-items: center;
+}
+@media (max-width: 720px) {
+  .ana-cmp-pickers { grid-template-columns: 1fr; }
+  .ana-cmp-vs { display: none; }
+}
+.ana-cmp-picker {
+  display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: center;
+}
+.ana-cmp-pin {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  color: var(--bg);
+}
+.ana-cmp-pin-A { background: var(--accent-warm, #E8B86D); }
+.ana-cmp-pin-B { background: var(--accent-cool, #7DAFC9); }
+.ana-cmp-vs {
+  display: grid; place-items: center;
+  font-family: var(--font-serif); font-style: italic;
+  font-size: 22px; color: var(--text-dim);
+}
+
+.ana-cmp-chart-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 16px 18px;
+}
+.ana-cmp-chart-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 10px;
+}
+.ana-cmp-chart-title {
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--text-dim);
+}
+.ana-cmp-chart-legend {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  font-family: var(--font-mono); font-size: 11px;
+  align-items: center;
+}
+.ana-cmp-leg { display: inline-flex; align-items: center; gap: 6px; }
+.ana-cmp-leg i {
+  width: 14px; height: 3px; border-radius: 2px; display: inline-block;
+}
+.ana-cmp-leg-A i { background: var(--accent-warm, #E8B86D); }
+.ana-cmp-leg-B i { background: var(--accent-cool, #7DAFC9); }
+.ana-cmp-leg strong {
+  font-weight: 500; color: var(--text);
+  max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ana-cmp-overlay {
+  width: 100%; height: 280px;
+  background: var(--surface-2, rgba(255,255,255,0.02));
+  border-radius: 8px;
+}
+.ana-cmp-axes {
+  display: flex; justify-content: space-between;
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-dim); margin-top: 6px;
+  padding: 0 50px 0 50px;
+}
+
+.ana-cmp-table {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; overflow: hidden;
+}
+.ana-cmp-row {
+  display: grid; grid-template-columns: 130px 1fr 1fr;
+  align-items: center;
+  padding: 10px 18px;
+  border-bottom: 1px dashed var(--border);
+}
+.ana-cmp-row:last-child { border-bottom: none; }
+.ana-cmp-row-head {
+  background: var(--surface-2, rgba(255,255,255,0.02));
+  padding: 8px 18px;
+}
+.ana-cmp-col {
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--text-dim);
+  text-align: center;
+}
+.ana-cmp-col-A { color: var(--accent-warm, #E8B86D); }
+.ana-cmp-col-B { color: var(--accent-cool, #7DAFC9); }
+.ana-cmp-lbl {
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--text-dim);
+}
+.ana-cmp-val {
+  font-family: var(--font-serif); font-size: 17px;
+  text-align: center; color: var(--text);
+}
+.ana-cmp-val em {
+  font-style: normal; font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-dim); margin-left: 3px;
+}
+.ana-cmp-val.is-best {
+  color: var(--accent); font-weight: 500;
+  position: relative;
+}
+.ana-cmp-val.is-best::before {
+  content: "★"; position: absolute; left: 8px; top: 50%;
+  transform: translateY(-50%); font-size: 10px; color: var(--accent);
+}
+
+/* combobox */
+.ana-combo { position: relative; }
+.ana-combo-input {
+  width: 100%;
+  padding: 10px 14px; border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border); color: var(--text);
+  font-family: var(--font-mono); font-size: 12px;
+}
+.ana-combo-input:focus {
+  outline: none; border-color: var(--accent);
+}
+.ana-combo-list {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px);
+  max-height: 220px; overflow: auto;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px;
+  display: none; z-index: 50;
+  box-shadow: 0 8px 22px rgba(0,0,0,.18);
+}
+.ana-combo.is-open .ana-combo-list { display: block; }
+.ana-combo-item {
+  display: block; width: 100%; text-align: left;
+  padding: 8px 12px; cursor: pointer;
+  background: transparent; border: none; color: var(--text);
+  font-size: 13px;
+}
+.ana-combo-item:hover, .ana-combo-item.is-active {
+  background: rgba(181, 209, 122, 0.1); color: var(--accent);
+}
+.ana-combo-item mark {
+  background: transparent; color: var(--accent); font-weight: 600;
+}
+.ana-combo-empty {
+  padding: 10px 12px; font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* leaflet ajustes para tema */
+[data-page="analisis"] .leaflet-container {
+  background: var(--surface-2, #11151a);
+}
+[data-theme="light"] [data-page="analisis"] .leaflet-container {
+  background: #f0eee9;
+}
+
+/* ============= utilidad SVG-axis ============= */
+.ana-scatter .scatter-dot { transition: r .15s ease; cursor: pointer; }
+.ana-scatter .scatter-dot:hover { r: 7; }
