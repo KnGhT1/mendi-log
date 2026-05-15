@@ -35,6 +35,8 @@
 <link rel="preload" as="font" type="font/woff2" href="{{ url_for('static', path='fonts/fraunces-400.woff2') }}" crossorigin>
 
 <link rel="stylesheet" href="{{ url_for('static', path='vendor/leaflet.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', path='vendor/MarkerCluster.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', path='vendor/MarkerCluster.Default.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/detail.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/analisis.css') }}">
@@ -43,6 +45,7 @@
 <script src="{{ url_for('static', path='vendor/htmx.min.js') }}" defer></script>
 <script src="{{ url_for('static', path='vendor/leaflet.js') }}" defer></script>
 <script src="{{ url_for('static', path='vendor/leaflet-heat.js') }}" defer></script>
+<script src="{{ url_for('static', path='vendor/leaflet.markercluster.js') }}" defer></script>
 
 <!-- Scripts de la app: globales para sobrevivir a los swaps de HTMX.
      Cada uno se autoexpone como window.MENDI_PAGES.<nombre> y el
