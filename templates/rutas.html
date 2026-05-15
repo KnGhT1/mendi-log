@@ -111,7 +111,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
           Cuadrícula
         </button>
-        <button data-view="map" disabled style="opacity:0.4; cursor:not-allowed;" title="Próximamente">
+        <button data-view="map">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 4l-6 2v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Mapa
         </button>
@@ -335,6 +335,19 @@
     <div class="section-head">
       <h2 class="section-title">Todas las rutas</h2>
       <div class="section-meta" id="routes-count">{{ data.total }} {{ 'ruta' if data.total == 1 else 'rutas' }} · ordenadas por fecha</div>
+    </div>
+
+    <div id="routes-map-wrap" style="display:none;">
+      <div class="map-wrap">
+        <div id="routes-map"></div>
+        <div class="map-legend">
+          <span class="legend-label">dificultad</span>
+          <span class="legend-dot easy">fácil</span>
+          <span class="legend-dot moderate">moderada</span>
+          <span class="legend-dot hard">difícil</span>
+          <span class="legend-dot very-hard">muy difícil</span>
+        </div>
+      </div>
     </div>
 
     <div class="routes-list" id="routes-list"></div>

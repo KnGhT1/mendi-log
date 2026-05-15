@@ -290,119 +290,119 @@
     updateMapTiles();
     requestAnimationFrame(() => { try { map && map.invalidateSize(); } catch (_) {} });
 
+    // Crear el clusterGroup una sola vez; _fetchMapMarkers añade capas progresivamente
+    const clusterGroup = L.markerClusterGroup({
+      maxClusterRadius: 40,
+      showCoverageOnHover: false,
+      iconCreateFunction(cluster) {
+        const count = cluster.getChildCount();
+        const color = cssVar("--accent") || "#B5D17A";
+        const bg = cssVar("--surface") || "#10151E";
+        const size = count < 10 ? 32 : count < 100 ? 38 : 44;
+        return L.divIcon({
+          html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};border:2px solid ${color};display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:${color};">${count}</div>`,
+          className: "",
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
+        });
+      },
+    });
+    map.addLayer(clusterGroup);
+
     window.MENDI_TEARDOWN.push(() => {
       try { if (map) map.remove(); } catch (_) {}
       map = null;
       darkTiles = lightTiles = darkLabels = lightLabels = undefined;
     });
 
-    _fetchMapMarkers();
+    _fetchMapMarkers(clusterGroup);
   }
 
   /**
    * Obtiene los marcadores del mapa desde /api/rutas y los pinta.
    * Usa limit=500 sin filtros para obtener todas las rutas del usuario.
    */
-  async function _fetchMapMarkers() {
+  async function _fetchMapMarkers(clusterGroup) {
     try {
-      const res = await fetch("/api/rutas/markers");
-      if (!res.ok) throw new Error("markers http " + res.status);
-      const json = await res.json();
-      const routes = json.items || [];
+      let offset = 0;
+      const LIMIT = 200;
+      let hasMore = true;
+      while (hasMore) {
+        const res = await fetch(`/api/rutas/markers?offset=${offset}&limit=${LIMIT}`);
+        if (!res.ok) throw new Error("markers http " + res.status);
+        const json = await res.json();
+        const routes = json.items || [];
+        hasMore = !!json.hasMore;
+        offset += routes.length;
 
-      if (!map) return;
+        if (!map) return;
 
-      const lvlColors = { easy: "#7DAFC9", moderate: "#B5D17A", hard: "#E8B86D", "very-hard": "#E47862" };
-      const bounds = [];
+        const lvlColors = { easy: "#7DAFC9", moderate: "#B5D17A", hard: "#E8B86D", "very-hard": "#E47862" };
+        const bounds = [];
 
-      // Agrupar rutas por celda de ~150 m para el popup multi-ruta.
-      const CELL = 667;
-      const cells = new Map();
-      routes.forEach(r => {
-        if (!r.lat || !r.lon) return;
-        const key = `${Math.round(r.lat * CELL)},${Math.round(r.lon * CELL)}`;
-        if (!cells.has(key)) cells.set(key, []);
-        cells.get(key).push(r);
-      });
-
-      const clusterGroup = L.markerClusterGroup({
-        maxClusterRadius: 40,
-        showCoverageOnHover: false,
-        iconCreateFunction(cluster) {
-          const count = cluster.getChildCount();
-          const color = cssVar("--accent") || "#B5D17A";
-          const bg = cssVar("--surface") || "#10151E";
-          const size = count < 10 ? 32 : count < 100 ? 38 : 44;
-          return L.divIcon({
-            html:
-              `<div style="
-                width:${size}px;height:${size}px;border-radius:50%;
-                background:${bg};border:2px solid ${color};
-                display:flex;align-items:center;justify-content:center;
-                font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;
-                color:${color};
-              ">${count}</div>`,
-            className: "",
-            iconSize: [size, size],
-            iconAnchor: [size / 2, size / 2],
-          });
-        },
-      });
-
-      cells.forEach((group) => {
-        const ref = group.reduce((a, b) => (b.km > a.km ? b : a));
-        const color = lvlColors[ref.level] || lvlColors.moderate;
-        const radius = 6 + (ref.km || 0) * 0.6;
-
-        let popupHtml;
-        if (group.length === 1) {
-          const r = group[0];
-          popupHtml =
-            `<div style="font-family:'IBM Plex Sans',sans-serif;min-width:190px;">` +
-            `<div style="margin-bottom:6px;">` +
-            `<a href="/rutas/${r.id}" style="font-family:Fraunces,serif;font-size:14px;font-weight:500;color:inherit;text-decoration:none;border-bottom:1px solid currentColor;">${escapeHtml(r.name)}</a>` +
-            `</div>` +
-            `<div style="font-family:'IBM Plex Mono',monospace;font-size:11px;opacity:0.75;line-height:1.7;">` +
-            `<div>${(r.km || 0).toFixed(2)} km &middot; ${r.gain || 0} m+</div>` +
-            `<div>dificultad ${(r.score || 0).toFixed(1)} &middot; ${escapeHtml(fmtDateLocal(r.started_at_iso) || "")}</div>` +
-            `</div></div>`;
-        } else {
-          const rows = group
-            .slice()
-            .sort((a, b) => (b.started_at_iso || "").localeCompare(a.started_at_iso || ""))
-            .map(r => {
-              const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${lvlColors[r.level] || lvlColors.moderate};margin-right:5px;flex-shrink:0;"></span>`;
-              return (
-                `<li style="display:flex;align-items:baseline;gap:4px;padding:5px 0;border-bottom:1px dashed rgba(128,128,128,0.25);">` +
-                `<span style="display:flex;align-items:center;flex:1;min-width:0;">` +
-                `${dot}` +
-                `<a href="/rutas/${r.id}" style="font-family:Fraunces,serif;font-size:13px;font-weight:500;color:inherit;text-decoration:none;border-bottom:1px solid currentColor;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(r.name)}</a>` +
-                `</span>` +
-                `<span style="font-family:'IBM Plex Mono',monospace;font-size:10px;opacity:0.65;white-space:nowrap;flex-shrink:0;">${(r.km || 0).toFixed(1)} km</span>` +
-                `</li>`
-              );
-            }).join("");
-          popupHtml =
-            `<div style="font-family:'IBM Plex Sans',sans-serif;min-width:220px;max-width:280px;">` +
-            `<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;opacity:0.5;margin-bottom:6px;">${group.length} rutas en esta zona</div>` +
-            `<ul style="list-style:none;margin:0;padding:0;max-height:220px;overflow-y:auto;">${rows}</ul>` +
-            `</div>`;
-        }
-
-        const marker = L.circleMarker([ref.lat, ref.lon], {
-          radius, color, fillColor: color, fillOpacity: 0.45, weight: 2,
+        const CELL = 667;
+        const cells = new Map();
+        routes.forEach(r => {
+          if (!r.lat || !r.lon) return;
+          const key = `${Math.round(r.lat * CELL)},${Math.round(r.lon * CELL)}`;
+          if (!cells.has(key)) cells.set(key, []);
+          cells.get(key).push(r);
         });
-        marker.bindPopup(popupHtml, { maxWidth: 300 });
-        clusterGroup.addLayer(marker);
-        bounds.push([ref.lat, ref.lon]);
-      });
 
-      map.addLayer(clusterGroup);
+        cells.forEach((group) => {
+          const ref = group.reduce((a, b) => (b.km > a.km ? b : a));
+          const color = lvlColors[ref.level] || lvlColors.moderate;
+          const radius = 6 + (ref.km || 0) * 0.6;
 
-      if (bounds.length >= 2) {
-        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 9 });
-      } else if (bounds.length === 1) {
-        map.setView(bounds[0], 11);
+          let popupHtml;
+          if (group.length === 1) {
+            const r = group[0];
+            popupHtml =
+              `<div style="font-family:'IBM Plex Sans',sans-serif;min-width:190px;">` +
+              `<div style="margin-bottom:6px;">` +
+              `<a href="/rutas/${r.id}" style="font-family:Fraunces,serif;font-size:14px;font-weight:500;color:inherit;text-decoration:none;border-bottom:1px solid currentColor;">${escapeHtml(r.name)}</a>` +
+              `</div>` +
+              `<div style="font-family:'IBM Plex Mono',monospace;font-size:11px;opacity:0.75;line-height:1.7;">` +
+              `<div>${(r.km || 0).toFixed(2)} km &middot; ${r.gain || 0} m+</div>` +
+              `<div>dificultad ${(r.score || 0).toFixed(1)} &middot; ${escapeHtml(fmtDateLocal(r.started_at_iso) || "")}</div>` +
+              `</div></div>`;
+          } else {
+            const rows = group
+              .slice()
+              .sort((a, b) => (b.started_at_iso || "").localeCompare(a.started_at_iso || ""))
+              .map(r => {
+                const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${lvlColors[r.level] || lvlColors.moderate};margin-right:5px;flex-shrink:0;"></span>`;
+                return (
+                  `<li style="display:flex;align-items:baseline;gap:4px;padding:5px 0;border-bottom:1px dashed rgba(128,128,128,0.25);">` +
+                  `<span style="display:flex;align-items:center;flex:1;min-width:0;">` +
+                  `${dot}` +
+                  `<a href="/rutas/${r.id}" style="font-family:Fraunces,serif;font-size:13px;font-weight:500;color:inherit;text-decoration:none;border-bottom:1px solid currentColor;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(r.name)}</a>` +
+                  `</span>` +
+                  `<span style="font-family:'IBM Plex Mono',monospace;font-size:10px;opacity:0.65;white-space:nowrap;flex-shrink:0;">${(r.km || 0).toFixed(1)} km</span>` +
+                  `</li>`
+                );
+              }).join("");
+            popupHtml =
+              `<div style="font-family:'IBM Plex Sans',sans-serif;min-width:220px;max-width:280px;">` +
+              `<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;opacity:0.5;margin-bottom:6px;">${group.length} rutas en esta zona</div>` +
+              `<ul style="list-style:none;margin:0;padding:0;max-height:220px;overflow-y:auto;">${rows}</ul>` +
+              `</div>`;
+          }
+
+          const marker = L.circleMarker([ref.lat, ref.lon], {
+            radius, color, fillColor: color, fillOpacity: 0.45, weight: 2,
+          });
+          marker.bindPopup(popupHtml, { maxWidth: 300 });
+          clusterGroup.addLayer(marker);
+          bounds.push([ref.lat, ref.lon]);
+        });
+
+        // Ajustar bounds solo en el primer lote
+        if (offset === routes.length && bounds.length >= 2) {
+          map.fitBounds(bounds, { padding: [50, 50], maxZoom: 9 });
+        } else if (offset === routes.length && bounds.length === 1) {
+          map.setView(bounds[0], 11);
+        }
       }
 
       hideMapLoading();
