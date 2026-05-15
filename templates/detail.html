@@ -644,15 +644,6 @@ window.MENDI_DETAIL = {
   name: {{ data.name | tojson }},
   startedAt: {{ data.started_at_iso | tojson }},
   summit: { lat: {{ data.summit_lat }}, lon: {{ data.summit_lon }} },
-  track: {{ data.map.track.points | tojson }},
-  bbox: {{ data.map.track.bbox | tojson }},
-  milestones: [
-    {% for m in data.map.milestones %}
-    { kind: {{ m.kind | tojson }}, label: {{ m.label | tojson }}, name: {{ m.name | tojson }},
-      elev: {{ m.elev_m }}, km: {{ m.km }}, time: {{ m.time_str | tojson }} }{% if not loop.last %},{% endif %}
-    {% endfor %}
-  ],
-  elevSamples: {{ data.elev.samples | tojson }},
   level: {{ data.hero.level | tojson }},
   notes: {
     text: {{ data.notes.text | tojson }},

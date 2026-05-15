@@ -320,21 +320,6 @@ mendi.log · resumen · {{ data.hero.route_count }} ruta{{ '' if data.hero.route
     kmByDay: {{ data.km_by_day | tojson }},
     kmByWeekday: {{ data.km_by_weekday | tojson }},
     kmByMonthHist: {{ data.km_by_month_hist | tojson }},
-    routes: [
-      {% for m in data.map_markers %}
-      {
-        name: {{ m.name | tojson }},
-        lat: {{ m.lat }},
-        lon: {{ m.lon }},
-        km: {{ m.km }},
-        gain: {{ m.gain }},
-        score: {{ m.score }},
-        level: {{ m.level | tojson }},
-        date_str: {{ m.date_str | tojson }},
-        started_at_iso: {{ m.started_at_iso | tojson }}
-      }{{ "," if not loop.last }}
-      {% endfor %}
-    ],
     months: [
       {% for p in data.monthly %}
       { m: {{ p.label | tojson }}, v: {{ p.value }} }{{ "," if not loop.last }}

@@ -809,8 +809,7 @@ def _apply_filters(qry, q: RutaQuery):
             pass
     if q.date_to:
         try:
-            from datetime import timedelta as _td
-            qry = qry.filter(Route.started_at < datetime.fromisoformat(q.date_to) + _td(days=1))
+            qry = qry.filter(Route.started_at < datetime.fromisoformat(q.date_to) + timedelta(days=1))
         except ValueError:
             pass
 

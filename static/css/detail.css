@@ -220,16 +220,17 @@ html[data-theme="light"] {
   box-shadow: var(--shadow-card);
   display: grid;
   grid-template-columns: 1fr 280px;
+  min-width: 0;
 }
 .detail-map-wrap {
   position: relative;
-  height: 460px;
+  height: auto;
   overflow: hidden;
+  min-width: 0;
 }
 #detail-map {
-  height: 460px;
-  width: 100% !important;
-  max-width: 100%;
+  position: absolute;
+  inset: 0;
   background: var(--map-bg);
 }
 .map-side {

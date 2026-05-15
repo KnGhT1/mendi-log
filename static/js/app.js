@@ -245,90 +245,105 @@
       hideMapLoading();
       return;
     }
-    const MENDI = window.MENDI || {};
-    const routes = MENDI.routes || [];
 
-    // Esperar a que el contenedor tenga dimensiones reales antes de
-    // inicializar Leaflet. Tras un swap de HTMX el navegador puede no
-    // haber resuelto el layout todavía cuando L.map() mide el elemento.
     const ro = new ResizeObserver((entries, observer) => {
       const h = entries[0].contentRect.height;
       if (h < 10) return;
       observer.disconnect();
-      _buildMap(el, routes);
+      _buildMap(el);
     });
     ro.observe(el);
     window.MENDI_TEARDOWN.push(() => { try { ro.disconnect(); } catch (_) {} });
 
-    const fallback = setTimeout(() => { ro.disconnect(); _buildMap(el, routes); }, 800);
+    const fallback = setTimeout(() => { ro.disconnect(); _buildMap(el); }, 800);
     window.MENDI_TEARDOWN.push(() => clearTimeout(fallback));
   }
 
   /**
-   * Construye el mapa Leaflet de la vista Resumen: capas de teselas
-   * oscuras/claras, marcadores proporcionales a la distancia coloreados
-   * por dificultad y popups con nombre, km y fecha. Ajusta los bounds si
-   * hay más de un punto. Registra el teardown del mapa en
-   * `window.MENDI_TEARDOWN`.
-   * @param {HTMLElement} el      Contenedor del mapa.
-   * @param {Array<object>} routes  Array de rutas con `lat`, `lon`, `km`,
-   *                                `level`, `name`, `gain`, `score`.
+   * Construye el mapa Leaflet vacío con teselas y teardown,
+   * luego fetcha los marcadores vía /api/rutas.
    */
-  function _buildMap(el, routes) {
-    if (map) return; // ya inicializado
-
-    const initialView = routes.length ? [routes[0].lat, routes[0].lon] : [42.78, -0.85];
-    const initialZoom = routes.length === 1 ? 11 : (routes.length ? 8 : 6);
+  function _buildMap(el) {
+    if (map) return;
 
     map = L.map(el, {
       zoomControl: true,
       attributionControl: true,
       scrollWheelZoom: true,
-    }).setView(initialView, initialZoom);
+    }).setView([42.78, -0.85], 6);
+
+    map.createPane("labelsPane").style.zIndex = "450";
 
     darkTiles = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png", {
       attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18
     });
     darkLabels = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", {
-      pane: "shadowPane", maxZoom: 18
+      pane: "labelsPane", maxZoom: 18
     });
     lightTiles = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
       attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18
     });
     lightLabels = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png", {
-      pane: "shadowPane", maxZoom: 18
+      pane: "labelsPane", maxZoom: 18
     });
 
-    const lvlColors = { easy: "#7DAFC9", moderate: "#B5D17A", hard: "#E8B86D", "very-hard": "#E47862" };
-    const bounds = [];
-    routes.forEach(r => {
-      const color = lvlColors[r.level] || lvlColors.moderate;
-      const radius = 6 + r.km * 0.6;
-      const marker = L.circleMarker([r.lat, r.lon], {
-        radius, color, fillColor: color, fillOpacity: 0.45, weight: 2
-      }).addTo(map);
-      marker.bindPopup(`
-        <div style="font-family: 'IBM Plex Sans', sans-serif; min-width: 180px;">
-          <div style="font-family: Fraunces, serif; font-size: 14px; font-weight:500; margin-bottom: 8px;">${escapeHtml(r.name)}</div>
-          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; opacity:0.75; line-height:1.7;">
-            <div>${r.km.toFixed(2)} km · ${r.gain} m+</div>
-            <div>dificultad ${r.score.toFixed(1)} · ${escapeHtml(fmtDateLocal(r.started_at_iso) || r.date_str)}</div>
-          </div>
-        </div>
-      `);
-      bounds.push([r.lat, r.lon]);
-    });
-    if (bounds.length >= 2) {
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 9 });
-    }
     updateMapTiles();
-    hideMapLoading();
+    requestAnimationFrame(() => { try { map && map.invalidateSize(); } catch (_) {} });
 
     window.MENDI_TEARDOWN.push(() => {
       try { if (map) map.remove(); } catch (_) {}
       map = null;
       darkTiles = lightTiles = darkLabels = lightLabels = undefined;
     });
+
+    _fetchMapMarkers();
+  }
+
+  /**
+   * Obtiene los marcadores del mapa desde /api/rutas y los pinta.
+   * Usa limit=500 sin filtros para obtener todas las rutas del usuario.
+   */
+  async function _fetchMapMarkers() {
+    try {
+      const res = await fetch("/api/rutas/markers");
+      if (!res.ok) throw new Error("markers http " + res.status);
+      const json = await res.json();
+      const routes = json.items || [];
+
+      if (!map) return;
+
+      const lvlColors = { easy: "#7DAFC9", moderate: "#B5D17A", hard: "#E8B86D", "very-hard": "#E47862" };
+      const bounds = [];
+
+      routes.forEach(r => {
+        if (!r.lat || !r.lon) return;
+        const color = lvlColors[r.level] || lvlColors.moderate;
+        const radius = 6 + (r.km || 0) * 0.6;
+        const marker = L.circleMarker([r.lat, r.lon], {
+          radius, color, fillColor: color, fillOpacity: 0.45, weight: 2
+        }).addTo(map);
+        marker.bindPopup(`
+          <div style="font-family:'IBM Plex Sans',sans-serif;min-width:180px;">
+            <div style="font-family:Fraunces,serif;font-size:14px;font-weight:500;margin-bottom:8px;">${escapeHtml(r.name)}</div>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;opacity:0.75;line-height:1.7;">
+              <div>${(r.km||0).toFixed(2)} km · ${r.gain||0} m+</div>
+              <div>dificultad ${(r.score||0).toFixed(1)} · ${escapeHtml(fmtDateLocal(r.started_at_iso) || r.date || "")}</div>
+            </div>
+          </div>
+        `);
+        bounds.push([r.lat, r.lon]);
+      });
+
+      if (bounds.length >= 2) {
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 9 });
+      } else if (bounds.length === 1) {
+        map.setView(bounds[0], 11);
+      }
+
+      hideMapLoading();
+    } catch (_) {
+      hideMapLoading();
+    }
   }
 
   /**

@@ -420,6 +420,43 @@ def api_rutas(
     })
 
 
+@app.get("/api/rutas/markers")
+def api_rutas_markers(
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Marcadores del mapa resumen: lat, lon, km, gain, score, level, name, date.
+
+    Devuelve todas las rutas del usuario con solo los campos necesarios
+    para pintar los circleMarkers de Leaflet. Sin paginación.
+    """
+    rows = (
+        db.query(
+            Route.id, Route.name, Route.start_lat, Route.start_lon,
+            Route.distance_km, Route.elevation_gain_m, Route.difficulty_score,
+            Route.difficulty_level, Route.started_at,
+        )
+        .filter(Route.user_id == current_user.id)
+        .order_by(Route.started_at.desc())
+        .all()
+    )
+    items = [
+        {
+            "id": r.id,
+            "name": r.name,
+            "lat": r.start_lat,
+            "lon": r.start_lon,
+            "km": round(float(r.distance_km or 0), 2),
+            "gain": int(r.elevation_gain_m or 0),
+            "score": round(float(r.difficulty_score or 0), 1),
+            "level": r.difficulty_level,
+            "started_at_iso": r.started_at.strftime("%Y-%m-%dT%H:%M:%SZ") if r.started_at else None,
+        }
+        for r in rows
+    ]
+    return JSONResponse({"items": items})
+
+
 @app.get("/analisis", response_class=HTMLResponse)
 def analisis(
     request: Request,

@@ -106,46 +106,31 @@
     function initMap() {
       const el = document.getElementById("detail-map");
       if (!el || typeof L === "undefined") {
-        hideMapLoading();
-        return;
-      }
-      const track = D.track || [];
-      if (!track.length) {
-        el.innerHTML = "<div style='display:grid;place-items:center;height:100%;font-family:var(--mono);font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.14em;'>sin track gpx</div>";
-        hideMapLoading();
+        const ov = document.getElementById("detail-map-loading");
+        if (ov) ov.style.display = "none";
         return;
       }
 
-      // Esperar a que el contenedor tenga dimensiones reales antes de
-      // inicializar Leaflet. Tras un swap de HTMX el grid padre puede
-      // no haber resuelto sus columnas todavía, lo que hace que Leaflet
-      // cachee un ancho incorrecto y el mapa tape al panel lateral.
       const wrap = el.closest(".detail-map-wrap") || el;
       const ro = new ResizeObserver((entries, observer) => {
         const w = entries[0].contentRect.width;
-        if (w < 10) return; // aún sin dimensiones
+        if (w < 10) return;
         observer.disconnect();
-        _buildMap(el, track);
+        _buildMap(el);
       });
       ro.observe(wrap);
       window.MENDI_TEARDOWN.push(() => { try { ro.disconnect(); } catch (_) {} });
 
-      // Fallback: si ResizeObserver no dispara en 600ms, inicializamos igualmente
-      const fallback = setTimeout(() => { ro.disconnect(); _buildMap(el, track); }, 600);
+      const fallback = setTimeout(() => { ro.disconnect(); _buildMap(el); }, 600);
       window.MENDI_TEARDOWN.push(() => clearTimeout(fallback));
     }
 
     /**
-     * Construye el mapa Leaflet de detalle: capas de teselas oscuras/claras,
-     * polilínea del track con contorno, marcadores de hitos y ajuste de
-     * bounds. Fuerza varios `invalidateSize` diferidos para corregir el
-     * layout tras animaciones CSS. Registra el teardown en
-     * `window.MENDI_TEARDOWN`.
-     * @param {HTMLElement} el     Contenedor del mapa.
-     * @param {Array<[number,number]>} track  Array de pares `[lat, lon]`.
+     * Construye el mapa Leaflet vacío con teselas y teardown.
+     * Los datos del track se cargan después vía _fetchTrack().
      */
-    function _buildMap(el, track) {
-      if (detailMap) return; // ya inicializado por el fallback o el observer
+    function _buildMap(el) {
+      if (detailMap) return;
 
       detailMap = L.map(el, {
         zoomControl: true,
@@ -153,123 +138,101 @@
         scrollWheelZoom: true,
       });
 
+      detailMap.createPane("labelsPane").style.zIndex = "450";
+
       darkTiles = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png", {
         attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18,
       });
       darkLabels = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", {
-        pane: "shadowPane", maxZoom: 18,
+        pane: "labelsPane", maxZoom: 18,
       });
       lightTiles = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
         attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18,
       });
       lightLabels = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png", {
-        pane: "shadowPane", maxZoom: 18,
+        pane: "labelsPane", maxZoom: 18,
       });
-
-      const color = levelColor(D.level);
-      trackOutline = L.polyline(track, {
-        color: "#000", opacity: 0.35, weight: 6, lineCap: "round", lineJoin: "round",
-      }).addTo(detailMap);
-      trackPolyline = L.polyline(track, {
-        color, weight: 3.2, opacity: 0.95, lineCap: "round", lineJoin: "round",
-      }).addTo(detailMap);
-
-      (D.milestones || []).forEach((m) => {
-        const pt = milestonePoint(m, track);
-        if (!pt) return;
-        const marker = L.marker(pt, { icon: buildPinIcon(m) }).addTo(detailMap);
-        const lines = [
-          `<div style="font-family:Fraunces,serif;font-size:14px;font-weight:500;margin-bottom:4px;">${escapeHtml(m.name)}</div>`,
-          `<div style="font-family:'IBM Plex Mono',monospace;font-size:11px;opacity:0.75;line-height:1.6;">`,
-          `${escapeHtml(m.label)}${m.time && m.time !== "—" ? ` · ${escapeHtml(m.time)}` : ""}<br>`,
-          `${fmtInt(m.elev)} m · km ${fmtKm(m.km)}`,
-          `</div>`,
-        ];
-        marker.bindPopup(lines.join(""));
-      });
-
-      if (D.bbox && D.bbox.length === 2) {
-        detailMap.fitBounds(D.bbox, { padding: [30, 30] });
-      } else {
-        detailMap.fitBounds(trackPolyline.getBounds(), { padding: [30, 30] });
-      }
 
       updateMapTiles();
-
-      // Tras un swap de HTMX, el contenedor puede no tener todavía sus
-      // dimensiones finales cuando L.map() las cachea → mapa en blanco
-      // hasta el primer resize. Forzamos un recálculo en el siguiente
-      // frame y otro algo más tarde por si la transición CSS aún
-      // está animando el layout.
-      const invalidate = () => {
-        if (!detailMap) return;
-        try {
-          detailMap.invalidateSize();
-          if (trackPolyline) {
-            const target = (D.bbox && D.bbox.length === 2) ? D.bbox : trackPolyline.getBounds();
-            detailMap.fitBounds(target, { padding: [30, 30], animate: false });
-          }
-        } catch (_) {}
-      };
-      requestAnimationFrame(invalidate);
-      const t1 = setTimeout(invalidate, 120);
-      const t2 = setTimeout(invalidate, 400);
+      requestAnimationFrame(() => { try { detailMap && detailMap.invalidateSize(); } catch (_) {} });
 
       window.MENDI_TEARDOWN.push(() => {
-        clearTimeout(t1);
-        clearTimeout(t2);
         try { if (detailMap) detailMap.remove(); } catch (_) {}
         detailMap = null;
         darkTiles = lightTiles = darkLabels = lightLabels = undefined;
         trackPolyline = trackOutline = null;
       });
+
+      _fetchTrack();
     }
 
     /**
-     * Localiza el punto del track más cercano al km indicado en el hito `m`.
-     * Para los hitos `start` y `end` devuelve directamente el primer o
-     * último punto. Para el resto recorre el track acumulando distancia
-     * haversine y devuelve el punto con menor delta respecto a `m.km`.
-     * @param {{kind:string, km:number}} m
-     * @param {Array<[number,number]>} track
-     * @returns {[number,number]}
+     * Obtiene track, bbox, milestones y elev_samples desde la API
+     * y los pinta sobre el mapa ya inicializado.
      */
-    function milestonePoint(m, track) {
+    async function _fetchTrack() {
+      try {
+        const res = await fetch(`/api/rutas/${ROUTE_ID}/track`);
+        if (!res.ok) throw new Error("track http " + res.status);
+        const json = await res.json();
+
+        const track = json.track || [];
+        const bbox  = json.bbox  || null;
+        const milestones  = json.milestones  || [];
+        const elevSamples = json.elev_samples || [];
+
+        if (!track.length || !detailMap) { hideMapLoading(); return; }
+
+        const color = levelColor(D.level);
+        trackOutline = L.polyline(track, {
+          color: "#000", opacity: 0.35, weight: 6, lineCap: "round", lineJoin: "round",
+        }).addTo(detailMap);
+        trackPolyline = L.polyline(track, {
+          color, weight: 3.2, opacity: 0.95, lineCap: "round", lineJoin: "round",
+        }).addTo(detailMap);
+
+        milestones.forEach((m) => {
+          const pt = _milestonePoint(m, track);
+          if (!pt) return;
+          const marker = L.marker(pt, { icon: buildPinIcon(m) }).addTo(detailMap);
+          const lines = [
+            `<div style="font-family:Fraunces,serif;font-size:14px;font-weight:500;margin-bottom:4px;">${escapeHtml(m.name)}</div>`,
+            `<div style="font-family:'IBM Plex Mono',monospace;font-size:11px;opacity:0.75;line-height:1.6;">`,
+            `${escapeHtml(m.label)}${m.time && m.time !== "—" ? ` · ${escapeHtml(m.time)}` : ""}<br>`,
+            `${fmtInt(m.elev)} m · km ${fmtKm(m.km)}`,
+            `</div>`,
+          ];
+          marker.bindPopup(lines.join(""));
+        });
+
+        const target = (bbox && bbox.length === 2) ? bbox : trackPolyline.getBounds();
+        detailMap.fitBounds(target, { padding: [30, 30] });
+        hideMapLoading();
+
+        if (elevSamples.length >= 2) initElevHover(elevSamples);
+
+      } catch (_) {
+        hideMapLoading();
+      }
+    }
+
+    function _milestonePoint(m, track) {
       if (m.kind === "start") return track[0];
-      if (m.kind === "end") return track[track.length - 1];
-      if (track.length < 2) return track[0];
+      if (m.kind === "end")   return track[track.length - 1];
+      if (track.length < 2)  return track[0];
       const targetKm = m.km;
-      let cum = 0;
-      let best = track[0];
-      let bestDelta = Math.abs(0 - targetKm);
+      let cum = 0, best = track[0], bestDelta = targetKm;
       for (let i = 1; i < track.length; i++) {
         const a = track[i - 1], b = track[i];
-        cum += haversineKm(a[0], a[1], b[0], b[1]);
+        const R = 6371.0088, toRad = (d) => d * Math.PI / 180;
+        const dLat = toRad(b[0] - a[0]), dLon = toRad(b[1] - a[1]);
+        const s = Math.sin(dLat / 2) ** 2 +
+          Math.cos(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.sin(dLon / 2) ** 2;
+        cum += 2 * R * Math.asin(Math.sqrt(s));
         const delta = Math.abs(cum - targetKm);
-        if (delta < bestDelta) {
-          bestDelta = delta;
-          best = b;
-        }
+        if (delta < bestDelta) { bestDelta = delta; best = b; }
       }
       return best;
-    }
-
-    /**
-     * Calcula la distancia haversine entre dos coordenadas geográficas.
-     * @param {number} lat1
-     * @param {number} lon1
-     * @param {number} lat2
-     * @param {number} lon2
-     * @returns {number}  Distancia en kilómetros.
-     */
-    function haversineKm(lat1, lon1, lat2, lon2) {
-      const R = 6371.0088;
-      const toRad = (d) => (d * Math.PI) / 180;
-      const dLat = toRad(lat2 - lat1);
-      const dLon = toRad(lon2 - lon1);
-      const a = Math.sin(dLat / 2) ** 2 +
-        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-      return 2 * R * Math.asin(Math.sqrt(a));
     }
 
     /**
@@ -332,16 +295,14 @@
      * más cercano con búsqueda binaria y actualiza el cursor SVG y el
      * tooltip con altitud, distancia, tiempo y pendiente.
      */
-    function initElevHover() {
+    function initElevHover(samples) {
       const wrap = document.getElementById("elev-wrap");
       const svg = document.getElementById("elev-svg");
       const cursor = document.getElementById("elev-cursor");
       const dot = document.getElementById("elev-cursor-dot");
       const tooltip = document.getElementById("elev-tooltip");
       if (!wrap || !svg || !cursor || !dot || !tooltip) return;
-
-      const samples = D.elevSamples || [];
-      if (samples.length < 2) return;
+      if (!samples || samples.length < 2) return;
 
       const ttAlt = document.getElementById("tt-alt");
       const ttDist = document.getElementById("tt-dist");
@@ -1055,8 +1016,8 @@
     }
 
     // ============ ARRANQUE ============
+    // initElevHover se llama desde _fetchTrack una vez lleguen los samples
     initMap();
-    initElevHover();
     initWeather();
     initNotes();
     initRenameModal();

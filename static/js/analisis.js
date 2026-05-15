@@ -188,14 +188,36 @@
     if (!el || typeof L === "undefined") return;
 
     const center = (payload && payload.mapCenter) || [42.7, -1.6];
-    const points = (payload && payload.heatPoints) || [];
-    const initialZoom = points.length === 1 ? 11 : (points.length ? 8 : 6);
+
+    // Esperar a que el contenedor tenga dimensiones reales antes de
+    // inicializar Leaflet, igual que en resumen y detalle.
+    const ro = new ResizeObserver((entries, observer) => {
+      const h = entries[0].contentRect.height;
+      if (h < 10) return;
+      observer.disconnect();
+      _buildHeatMap(el, center);
+    });
+    ro.observe(el);
+    window.MENDI_TEARDOWN.push(() => { try { ro.disconnect(); } catch (_) {} });
+
+    const fallback = setTimeout(() => { ro.disconnect(); _buildHeatMap(el, center); }, 800);
+    window.MENDI_TEARDOWN.push(() => clearTimeout(fallback));
+  }
+
+  /**
+   * Construye el mapa Leaflet vacío con teselas y teardown,
+   * luego pinta los puntos de calor desde el payload ya disponible.
+   */
+  function _buildHeatMap(el, center) {
+    if (heatMap) return;
 
     heatMap = L.map(el, {
       zoomControl: true,
       attributionControl: true,
       scrollWheelZoom: true,
-    }).setView(center, initialZoom);
+    }).setView(center, 6);
+
+    heatMap.createPane("labelsPane").style.zIndex = "450";
 
     darkTiles = L.tileLayer(
       "https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png",
@@ -206,14 +228,28 @@
       { attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18 }
     );
 
-    if (points.length && typeof L.heatLayer === "function") {
+    updateHeatTiles();
+    requestAnimationFrame(() => { try { heatMap && heatMap.invalidateSize(); } catch (_) {} });
+
+    window.MENDI_TEARDOWN.push(() => {
+      try { if (heatMap) heatMap.remove(); } catch (_) {}
+      heatMap = null; heatLayer = null; darkTiles = null; lightTiles = null;
+    });
+
+    _paintHeatPoints();
+  }
+
+  /**
+   * Pinta los puntos de calor sobre el mapa ya inicializado.
+   * Los datos vienen del payload embebido en la página.
+   */
+  function _paintHeatPoints() {
+    if (!heatMap || !payload) return;
+    const points = payload.heatPoints || [];
+    if (!points.length) return;
+
+    if (typeof L.heatLayer === "function") {
       const maxW = Math.max(...points.map(p => p[2])) || 1;
-      // Parche del context 2D: leaflet-heat llama a `getImageData()` en cada
-      // redraw para mezclar los puntos. Sin la flag `willReadFrequently:true`
-      // Chrome no acelera esa lectura por GPU y bloquea el hilo principal
-      // (~900 ms en el primer fitBounds). Inyectamos la flag durante la
-      // creación del layer y restauramos el método justo después para no
-      // contaminar a otros usuarios del canvas (Leaflet tiles, etc.).
       withCanvasReadFlag(() => {
         heatLayer = L.heatLayer(points, {
           radius: 22,
@@ -230,25 +266,12 @@
       });
     }
 
-    // Encajar bounds si tenemos varios puntos
     if (points.length >= 2) {
       const bounds = L.latLngBounds(points.map(p => [p[0], p[1]]));
       heatMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 9 });
+    } else if (points.length === 1) {
+      heatMap.setView([points[0][0], points[0][1]], 11);
     }
-
-    updateHeatTiles();
-
-    // Triple-tick invalidate: forzar repintado cuando el contenedor se hace
-    // visible tras un swap de HTMX.
-    const refresh = () => { try { heatMap.invalidateSize(); } catch (_) {} };
-    requestAnimationFrame(refresh);
-    setTimeout(refresh, 120);
-    setTimeout(refresh, 400);
-
-    window.MENDI_TEARDOWN.push(() => {
-      try { if (heatMap) heatMap.remove(); } catch (_) {}
-      heatMap = null; heatLayer = null; darkTiles = null; lightTiles = null;
-    });
   }
 
   /**
