@@ -25,7 +25,7 @@ from typing import List, Optional, Tuple
 from sqlalchemy import asc, func
 from sqlalchemy.orm import Session
 
-from app.models import Route, TrackPoint
+from app.models import Route, Summit, TrackPoint
 from app.text_utils import canonical_geo
 from app.stats import (
     MONTH_LABELS_ES,
@@ -596,26 +596,21 @@ def _build_hero(db: Session, user_id: int, route: Route) -> HeroData:
 def _build_milestones(
     route: Route,
     points: List[TrackPoint],
+    summits: List[Summit],
     cum2d: List[float],
     total_km_2d: float,
     alt_min: int,
     alt_max: int,
-) -> Tuple[List[Milestone], Optional[TrackPoint], float, float, float]:
-    """Construye los hitos del recorrido: salida, cima y llegada.
+) -> Tuple[List[Milestone], float, float]:
+    """Construye los hitos del recorrido: salida, cimas y llegada.
 
-    Devuelve (milestones, summit_point, summit_lat, summit_lon, summit_km).
+    Devuelve (milestones, summit_lat, summit_lon) donde summit_lat/lon
+    corresponden a la cima de mayor altitud (ancla para el clima).
     """
-    summit = _pick_summit(points) if points else None
-    summit_lat = summit.lat if summit else route.start_lat
-    summit_lon = summit.lon if summit else route.start_lon
-    summit_alt = int(round(summit.elevation_m)) if summit and summit.elevation_m is not None else (alt_max or 0)
-
-    summit_km = 0.0
-    if summit and points:
-        for i, p in enumerate(points):
-            if p.seq == summit.seq:
-                summit_km = cum2d[i] / 1000.0
-                break
+    # Cima principal (mayor altitud) para el clima
+    primary = max(summits, key=lambda s: s.elevation_m or -9999) if summits else None
+    summit_lat = primary.lat if primary else route.start_lat
+    summit_lon = primary.lon if primary else route.start_lon
 
     start_origin = route.sub_region or route.region or "salida"
     milestones: List[Milestone] = []
@@ -629,16 +624,27 @@ def _build_milestones(
             km_str=f"km {_fmt_km_short(0.0)}",
             time_str=_fmt_hhmm(points[0].time),
         ))
-        if summit:
+
+        for s in summits:
+            # km acumulado hasta el punto del track más cercano a la cima
+            summit_km = 0.0
+            if cum2d:
+                best_i = min(
+                    range(len(points)),
+                    key=lambda i, _s=s: (points[i].lat - _s.lat) ** 2 + (points[i].lon - _s.lon) ** 2,
+                )
+                summit_km = cum2d[best_i] / 1000.0
+            summit_alt = s.elevation_m or alt_max
             milestones.append(Milestone(
                 kind="summit",
                 label="cumbre",
-                name=f"Cima {route.name}",
+                name=s.name or f"Cima {route.name}" if len(summits) == 1 else s.name or f"Cima {s.seq + 1}",
                 elev_m=summit_alt,
                 km=round(summit_km, 1),
                 km_str=f"km {_fmt_km_short(summit_km)}",
-                time_str=_fmt_hhmm(summit.time),
+                time_str="—",
             ))
+
         milestones.append(Milestone(
             kind="end",
             label="llegada",
@@ -649,7 +655,7 @@ def _build_milestones(
             time_str=_fmt_hhmm(points[-1].time),
         ))
 
-    return milestones, summit, summit_lat, summit_lon, summit_km
+    return milestones, summit_lat, summit_lon
 
 
 def _build_map(
@@ -865,6 +871,13 @@ def build_detail(db: Session, user_id: int, route_id: int) -> Optional[DetailDat
         .all()
     )
 
+    summits: List[Summit] = (
+        db.query(Summit)
+        .filter(Summit.route_id == route.id)
+        .order_by(Summit.seq.asc())
+        .all()
+    )
+
     cum2d, cum3d, total2d, total3d = _compute_distances(points)
     total_km_2d = total2d / 1000.0 if total2d else route.distance_km
     alt_max = route.max_altitude_m or 0
@@ -872,8 +885,8 @@ def build_detail(db: Session, user_id: int, route_id: int) -> Optional[DetailDat
 
     slope_avg_pct, slope_max_pct, hardest_km = _compute_slopes(points, cum2d) if points else (0.0, 0.0, 1)
 
-    milestones, summit, summit_lat, summit_lon, summit_km = _build_milestones(
-        route, points, cum2d, total_km_2d, alt_min, alt_max
+    milestones, summit_lat, summit_lon = _build_milestones(
+        route, points, summits, cum2d, total_km_2d, alt_min, alt_max
     )
 
     elev_strip = ElevStrip(

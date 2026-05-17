@@ -134,6 +134,24 @@ class TrackPoint(Base):
     route = relationship("Route", back_populates="track_points")
 
 
+class Summit(Base):
+    """Cimas detectadas para una ruta (vía Overpass API o fallback al máximo absoluto)."""
+
+    __tablename__ = "summits"
+
+    id = Column(Integer, primary_key=True)
+    route_id = Column(Integer, ForeignKey("routes.id", ondelete="CASCADE"), nullable=False, index=True)
+    seq = Column(Integer, nullable=False)          # orden de aparición en la ruta (por km)
+    lat = Column(Float, nullable=False)
+    lon = Column(Float, nullable=False)
+    elevation_m = Column(Integer, nullable=True)   # altitud en metros
+    name = Column(String, nullable=True)           # nombre OSM, None si no disponible
+    source = Column(String, nullable=False, default="overpass")  # "overpass" | "fallback"
+
+
+Index("ix_summits_route", Summit.route_id, Summit.seq, unique=True)
+
+
 class WeatherCache(Base):
     """Caché de respuestas Open-Meteo por (lat, lon, fecha)."""
 
