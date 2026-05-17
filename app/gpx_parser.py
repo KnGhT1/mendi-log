@@ -17,9 +17,9 @@ import gpxpy.gpx
 
 # ----- Parametros calibracion -----
 # Suavizado de la elevacion para evitar ruido GPS antes de acumular subida.
-ELEVATION_SMOOTH_WINDOW = 5
+ELEVATION_SMOOTH_WINDOW = 10
 # Solo se cuenta como subida si el delta acumulado supera este umbral en m.
-ELEVATION_GAIN_THRESHOLD = 3.0
+ELEVATION_GAIN_THRESHOLD = 8.0
 # Velocidad minima (m/s) para considerar que el usuario esta en movimiento.
 MIN_MOVING_SPEED_MPS = 0.4
 # Distancia minima (m) entre puntos para descartar ruido GPS.
