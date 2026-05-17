@@ -265,40 +265,12 @@ def _origin_text(r: Route) -> str:
 # guardan inicio (mes, día) y fin (mes, día). El fin del invierno cae en
 # el año siguiente al inicio.
 SEASONS: Dict[str, Tuple[Tuple[int, int], Tuple[int, int], str]] = {
-    "spring": ((3, 21), (6, 20), "primavera"),
+    "spring": ((3, 20), (6, 20), "primavera"),
     "summer": ((6, 21), (9, 22), "verano"),
-    "autumn": ((9, 23), (12, 20), "otoño"),
-    "winter": ((12, 21), (3, 20), "invierno"),  # cruza año natural
+    "autumn": ((9, 23), (12, 21), "otoño"),
+    "winter": ((12, 22), (3, 19), "invierno"),  # cruza año natural
 }
 SEASON_KEYS = set(SEASONS.keys())
-
-
-def _resolve_season(today: date, key: str) -> Tuple[date, date, str]:
-    """Devuelve (start, end, label) de la temporada más reciente respecto a hoy.
-
-    Para invierno la temporada cruza el cambio de año, así que se identifica
-    por el año en que empieza (ej. "invierno 2025-26").
-    """
-    (sm, sd), (em, ed), label = SEASONS[key]
-    if key == "winter":
-        # Buscar el invierno más reciente cuyo inicio sea <= hoy
-        for start_year in (today.year, today.year - 1, today.year - 2):
-            start = date(start_year, sm, sd)
-            end = date(start_year + 1, em, ed)
-            if today >= start:
-                return start, end, f"{label} {start_year}-{str(start_year + 1)[2:]}"
-        # Fallback (datos muy antiguos): el invierno de hace dos años
-        sy = today.year - 2
-        return (date(sy, sm, sd), date(sy + 1, em, ed),
-                f"{label} {sy}-{str(sy + 1)[2:]}")
-
-    for year in (today.year, today.year - 1, today.year - 2):
-        start = date(year, sm, sd)
-        end = date(year, em, ed)
-        if today >= start:
-            return start, end, f"{label} {year}"
-    y = today.year - 1
-    return (date(y, sm, sd), date(y, em, ed), f"{label} {y}")
 
 
 def _resolve_range(
@@ -322,8 +294,8 @@ def _resolve_range(
             pass
 
     if rk in SEASON_KEYS:
-        start, end, label = _resolve_season(today, rk)
-        return start, end, rk, label
+        _, _, label = SEASONS[rk]
+        return None, None, rk, f"todas las {label}s"
 
     if rk == "year":
         return (date(today.year, 1, 1), today,
@@ -359,18 +331,60 @@ def _filter_routes(
     user_id: int,
     start: Optional[date],
     end: Optional[date],
+    season_key: Optional[str] = None,
 ) -> List[Route]:
     """Devuelve rutas del usuario ordenadas por fecha dentro del rango [start, end].
 
-    Si start o end son None no se aplica ese extremo del filtro (histórico
-    completo en ese lado).
+    Si `season_key` está presente, ignora start/end y filtra por todos los
+    años del histórico que caigan en esa estación astronómica.
     """
     qry = db.query(Route).filter(Route.user_id == user_id)
-    if start:
-        qry = qry.filter(Route.started_at >= datetime.combine(start, datetime.min.time()))
-    if end:
-        end_dt = datetime.combine(end, datetime.max.time())
-        qry = qry.filter(Route.started_at <= end_dt)
+
+    if season_key and season_key in SEASONS:
+        (sm, sd), (em, ed), _ = SEASONS[season_key]
+        if season_key == "winter":
+            # Invierno cruza el año: (mes >= 12 AND dia >= 22) OR (mes <= 3 AND dia <= 19)
+            qry = qry.filter(or_(
+                and_(
+                    extract("month", Route.started_at) == 12,
+                    extract("day", Route.started_at) >= sd,
+                ),
+                and_(
+                    extract("month", Route.started_at) == 1,
+                ),
+                and_(
+                    extract("month", Route.started_at) == 2,
+                ),
+                and_(
+                    extract("month", Route.started_at) == 3,
+                    extract("day", Route.started_at) <= ed,
+                ),
+            ))
+        else:
+            # Estaciones que no cruzan el año
+            qry = qry.filter(or_(
+                # mes de inicio: solo días >= sd
+                and_(
+                    extract("month", Route.started_at) == sm,
+                    extract("day", Route.started_at) >= sd,
+                ),
+                # meses intermedios completos
+                *[
+                    extract("month", Route.started_at) == m
+                    for m in range(sm + 1, em)
+                ],
+                # mes de fin: solo días <= ed
+                and_(
+                    extract("month", Route.started_at) == em,
+                    extract("day", Route.started_at) <= ed,
+                ),
+            ))
+    else:
+        if start:
+            qry = qry.filter(Route.started_at >= datetime.combine(start, datetime.min.time()))
+        if end:
+            qry = qry.filter(Route.started_at <= datetime.combine(end, datetime.max.time()))
+
     return qry.order_by(Route.started_at.asc()).all()
 
 
@@ -432,7 +446,8 @@ def build_analisis(
     start, end, rk_norm, range_label = _resolve_range(range_key, from_date, to_date)
     chips = _build_chips(rk_norm)
 
-    routes = _filter_routes(db, user_id, start, end)
+    routes = _filter_routes(db, user_id, start, end,
+                             season_key=rk_norm if rk_norm in SEASON_KEYS else None)
     if not routes:
         empty = _empty_analisis(rk_norm)
         empty.range_chips = chips
