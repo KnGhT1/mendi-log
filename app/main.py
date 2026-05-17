@@ -32,6 +32,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from starlette.datastructures import MutableHeaders
 
@@ -392,7 +393,7 @@ def api_rutas(
     date_to: str = "",
     sort: str = "date-desc",
     offset: int = 0,
-    limit: int = Query(default=10, ge=1, le=50),
+    limit: int = Query(default=10, ge=1, le=200),
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -422,14 +423,21 @@ def api_rutas(
 
 @app.get("/api/rutas/markers")
 def api_rutas_markers(
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=200),
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    """Marcadores del mapa resumen: lat, lon, km, gain, score, level, name, date.
+    """Marcadores del mapa: lat, lon, km, gain, score, level, name, date.
 
-    Devuelve todas las rutas del usuario con solo los campos necesarios
-    para pintar los circleMarkers de Leaflet. Sin paginación.
+    Paginado (200 por lote). El cliente hace fetches consecutivos hasta
+    que `hasMore` sea false para carga progresiva.
     """
+    total = (
+        db.query(func.count(Route.id))
+        .filter(Route.user_id == current_user.id)
+        .scalar() or 0
+    )
     rows = (
         db.query(
             Route.id, Route.name, Route.start_lat, Route.start_lon,
@@ -438,6 +446,8 @@ def api_rutas_markers(
         )
         .filter(Route.user_id == current_user.id)
         .order_by(Route.started_at.desc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
     items = [
@@ -454,7 +464,11 @@ def api_rutas_markers(
         }
         for r in rows
     ]
-    return JSONResponse({"items": items})
+    return JSONResponse({
+        "items": items,
+        "total": total,
+        "hasMore": (offset + len(items)) < total,
+    })
 
 
 @app.get("/analisis", response_class=HTMLResponse)

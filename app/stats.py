@@ -847,7 +847,7 @@ def query_rutas(db: Session, user_id: int, q: RutaQuery) -> RutaQueryResult:
     rows = (
         base.order_by(sort_clause, Route.id.desc())
         .offset(max(0, q.offset))
-        .limit(max(1, min(q.limit, 50)))
+        .limit(max(1, min(q.limit, 200)))
         .all()
     )
     items = [_to_ruta_item(r) for r in rows]

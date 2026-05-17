@@ -88,12 +88,16 @@
 
     const STORAGE_FEAT_INTERVAL = "mendi.rutas.featured.interval";
     const STORAGE_VIEW = "mendi.rutas.view";
-    const PAGE_SIZE = 10;
+    const PAGE_SIZE = 200;
 
     // Vista activa: "list" | "grid". Se persiste en localStorage.
     let currentView = "list";
-    try { currentView = localStorage.getItem(STORAGE_VIEW) || "list"; } catch (_) {}
-    if (currentView !== "list" && currentView !== "grid") currentView = "list";
+    try {
+      const saved = localStorage.getItem(STORAGE_VIEW) || "list";
+      currentView = saved === "grid" ? "grid" : "list";
+      // Si había "map" guardado, lo reemplazamos por "list"
+      if (saved === "map") localStorage.setItem(STORAGE_VIEW, "list");
+    } catch (_) {}
 
     /**
      * Aplica la vista `view` al contenedor de rutas: alterna las clases
@@ -103,15 +107,26 @@
      */
     function applyView(view) {
       currentView = view;
-      try { localStorage.setItem(STORAGE_VIEW, view); } catch (_) {}
+      try { if (view !== "map") localStorage.setItem(STORAGE_VIEW, view); } catch (_) {}
       const list = $("routes-list");
-      if (list) {
-        list.classList.toggle("routes-list", view === "list");
-        list.classList.toggle("routes-grid", view === "grid");
-      }
+      const mapWrap = $("routes-map-wrap");
+      const sentinel = $("routes-sentinel");
+      if (list) list.style.display = view === "map" ? "none" : "";
+      if (mapWrap) mapWrap.style.display = view === "map" ? "" : "none";
+      if (sentinel) sentinel.style.display = view === "map" ? "none" : "";
       document.querySelectorAll(".view-switch button").forEach(b => {
         b.classList.toggle("active", b.dataset.view === view);
       });
+      if (view === "map") {
+        if (!routesMap) {
+          _buildRoutesMap();
+        } else {
+          requestAnimationFrame(() => {
+            try { routesMap.invalidateSize(); } catch (_) {}
+          });
+          updateRoutesMap();
+        }
+      }
     }
 
     /**
@@ -389,6 +404,210 @@
       });
     }
 
+    // ============ ROUTES MAP ============
+    let routesMap = null;
+    let routesMapDark, routesMapLight, routesMapDarkLabels, routesMapLightLabels;
+    let routesClusterGroup = null;
+    // Cache de items para repintar sin refetch
+    let routesMapItems = [];
+
+    function _routesMapTheme() {
+      return document.documentElement.getAttribute("data-theme") || "dark";
+    }
+
+    function syncRoutesMapTiles() {
+      if (!routesMap) return;
+      if (_routesMapTheme() === "dark") {
+        if (routesMap.hasLayer(routesMapLight)) routesMap.removeLayer(routesMapLight);
+        if (routesMap.hasLayer(routesMapLightLabels)) routesMap.removeLayer(routesMapLightLabels);
+        if (!routesMap.hasLayer(routesMapDark)) routesMapDark.addTo(routesMap);
+        if (!routesMap.hasLayer(routesMapDarkLabels)) routesMapDarkLabels.addTo(routesMap);
+      } else {
+        if (routesMap.hasLayer(routesMapDark)) routesMap.removeLayer(routesMapDark);
+        if (routesMap.hasLayer(routesMapDarkLabels)) routesMap.removeLayer(routesMapDarkLabels);
+        if (!routesMap.hasLayer(routesMapLight)) routesMapLight.addTo(routesMap);
+        if (!routesMap.hasLayer(routesMapLightLabels)) routesMapLightLabels.addTo(routesMap);
+      }
+    }
+
+    function _buildRoutesMapPopup(r) {
+      const km = (r.km || 0).toFixed(2).replace(".", ",");
+      const gain = String(r.gain ?? 0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+      const score = (r.score ?? 0).toFixed(1).replace(".", ",");
+      const eleMin = String(r.ele_min ?? 0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+      const eleMax = String(r.ele_max ?? 0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+      const color = levelColor(r.level);
+      const svgElev = r.line
+        ? `<div style="height:52px;margin:8px 0 4px;">
+            <svg viewBox="0 0 800 200" preserveAspectRatio="none" style="width:100%;height:100%;display:block;">
+              <defs>
+                <linearGradient id="pmg-${r.id}" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stop-color="${color}" stop-opacity="0.4"/>
+                  <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <path d="${escapeHTML(r.area || "")}" fill="url(#pmg-${r.id})"/>
+              <path d="${escapeHTML(r.line)}" fill="none" stroke="${color}" stroke-width="1.6" stroke-opacity="0.9"/>
+            </svg>
+          </div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:0.08em;margin-bottom:6px;">${eleMin}–${eleMax} m</div>`
+        : "";
+      return (
+        `<div style="font-family:'IBM Plex Sans',sans-serif;min-width:200px;max-width:260px;">` +
+        `<div style="margin-bottom:6px;">` +
+        `<a href="/rutas/${r.id}" style="font-family:Fraunces,serif;font-size:14px;font-weight:500;color:inherit;text-decoration:none;border-bottom:1px solid currentColor;">${escapeHTML(r.name)}</a>` +
+        `</div>` +
+        `<div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">${escapeHTML(r.region || "")}</div>` +
+        svgElev +
+        `<div style="font-family:'IBM Plex Mono',monospace;font-size:11px;opacity:0.75;line-height:1.8;">` +
+        `<div>${km} km &middot; ${gain} m+</div>` +
+        `<div style="color:${color};">&#9679; ${score} &middot; ${escapeHTML(r.level_label || r.level || "")}</div>` +
+        `<div style="opacity:0.6;">${escapeHTML(fmtDateLocal(r.started_at_iso) || r.date || "")}</div>` +
+        `</div></div>`
+      );
+    }
+
+    function _addMarkersToCluster(cluster, items, fitBounds) {
+      const bounds = [];
+      items.forEach(r => {
+        if (!r.lat || !r.lon) return;
+        const color = levelColor(r.level);
+        const marker = L.circleMarker([r.lat, r.lon], {
+          radius: 7,
+          color,
+          fillColor: color,
+          fillOpacity: 1,
+          weight: 0,
+        });
+        marker.bindPopup(_buildRoutesMapPopup(r), { maxWidth: 280 });
+        cluster.addLayer(marker);
+        bounds.push([r.lat, r.lon]);
+      });
+      if (fitBounds && routesMap) {
+        if (bounds.length >= 2) {
+          routesMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 10 });
+        } else if (bounds.length === 1) {
+          routesMap.setView(bounds[0], 11);
+        }
+      }
+    }
+
+    function _paintRoutesMapMarkers(items) {
+      if (!routesMap) return;
+      if (routesClusterGroup) {
+        routesMap.removeLayer(routesClusterGroup);
+        routesClusterGroup = null;
+      }
+
+      const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+      routesClusterGroup = L.markerClusterGroup({
+        maxClusterRadius: 40,
+        showCoverageOnHover: false,
+        iconCreateFunction(cluster) {
+          const count = cluster.getChildCount();
+          const color = cssVar("--accent") || "#B5D17A";
+          const bg = cssVar("--surface") || "#10151E";
+          const size = count < 10 ? 32 : count < 100 ? 38 : 44;
+          return L.divIcon({
+            html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};border:2px solid ${color};display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:${color};">${count}</div>`,
+            className: "",
+            iconSize: [size, size],
+            iconAnchor: [size / 2, size / 2],
+          });
+        },
+      });
+
+      _addMarkersToCluster(routesClusterGroup, items, true);
+      routesMap.addLayer(routesClusterGroup);
+    }
+
+    async function _fetchRoutesMapItems() {
+      if (routesClusterGroup) {
+        routesMap.removeLayer(routesClusterGroup);
+        routesClusterGroup = null;
+      }
+      routesMapItems = [];
+
+      const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+      routesClusterGroup = L.markerClusterGroup({
+        maxClusterRadius: 40,
+        showCoverageOnHover: false,
+        iconCreateFunction(cluster) {
+          const count = cluster.getChildCount();
+          const color = cssVar("--accent") || "#B5D17A";
+          const bg = cssVar("--surface") || "#10151E";
+          const size = count < 10 ? 32 : count < 100 ? 38 : 44;
+          return L.divIcon({
+            html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};border:2px solid ${color};display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:${color};">${count}</div>`,
+            className: "",
+            iconSize: [size, size],
+            iconAnchor: [size / 2, size / 2],
+          });
+        },
+      });
+      if (routesMap) routesMap.addLayer(routesClusterGroup);
+
+      const LIMIT = PAGE_SIZE;
+      let offset = 0;
+      let hasMore = true;
+      let firstBatch = true;
+
+      while (hasMore) {
+        const params = buildQueryParams(true);
+        params.set("limit", String(LIMIT));
+        params.set("offset", String(offset));
+        try {
+          const res = await fetch(`/api/rutas?${params.toString()}`, { headers: { Accept: "application/json" } });
+          if (!res.ok) throw new Error("http " + res.status);
+          const json = await res.json();
+          const items = Array.isArray(json.items) ? json.items : [];
+          hasMore = !!json.hasMore;
+          offset += items.length;
+          routesMapItems = routesMapItems.concat(items);
+          _addMarkersToCluster(routesClusterGroup, items, firstBatch);
+          firstBatch = false;
+        } catch (_) {
+          break;
+        }
+      }
+    }
+
+    function updateRoutesMap() {
+      if (!routesMap) return;
+      _fetchRoutesMapItems();
+    }
+
+    function _buildRoutesMap() {
+      const el = $("routes-map");
+      if (!el || typeof L === "undefined" || routesMap) return;
+      routesMap = L.map(el, {
+        zoomControl: true,
+        attributionControl: true,
+        scrollWheelZoom: true,
+      }).setView([42.78, -0.85], 7);
+
+      routesMap.createPane("labelsPane").style.zIndex = "450";
+
+      routesMapDark = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png", { attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18 });
+      routesMapDarkLabels = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", { pane: "labelsPane", maxZoom: 18 });
+      routesMapLight = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", { attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18 });
+      routesMapLightLabels = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png", { pane: "labelsPane", maxZoom: 18 });
+
+      syncRoutesMapTiles();
+      // El contenedor acaba de mostrarse: invalidateSize garantiza que
+      // Leaflet recalcula dimensiones reales tras el display:none -> block
+      setTimeout(() => { try { routesMap && routesMap.invalidateSize(); } catch (_) {} }, 0);
+
+      window.MENDI_TEARDOWN.push(() => {
+        try { if (routesMap) routesMap.remove(); } catch (_) {}
+        routesMap = routesMapDark = routesMapLight = routesMapDarkLabels = routesMapLightLabels = null;
+        routesClusterGroup = null;
+        routesMapItems = [];
+      });
+
+      _fetchRoutesMapItems();
+    }
+
     // ============ STATE FILTERS ============
     const DEFAULT_DIFFICULTY = ["easy", "moderate", "hard", "very-hard"];
     const state = {
@@ -594,7 +813,7 @@
       const list = $("routes-list");
       const empty = $("empty-state");
       if (reset && list) {
-        list.style.display = "";
+        if (currentView !== "map") list.style.display = "";
         if (empty) empty.style.display = "none";
         list.innerHTML = buildSkeletonHTML(6);
       }
@@ -633,7 +852,15 @@
       const html = items.map((r, i) => {
         return currentView === "grid" ? buildCardHTML(r, q) : buildRowHTML(r, startIdx + i + 1, q);
       }).join("");
-      if (reset) list.innerHTML = html;
+      if (reset) {
+        // Aplicar clase de vista justo antes de insertar contenido real
+        const list2 = $("routes-list");
+        if (list2) {
+          list2.classList.toggle("routes-list", currentView !== "grid");
+          list2.classList.toggle("routes-grid", currentView === "grid");
+        }
+        list.innerHTML = html;
+      }
       else list.insertAdjacentHTML("beforeend", html);
 
       state.offset = (reset ? 0 : state.offset) + items.length;
@@ -643,13 +870,13 @@
       if (state.matched === 0) {
         list.style.display = "none";
         if (empty) {
-          empty.style.display = "block";
+          empty.style.display = currentView === "map" ? "none" : "block";
           empty.innerHTML = q
             ? `ninguna ruta coincide con <span style="color:var(--text); font-weight:500;">"${escapeHTML(q)}"</span> y los filtros activos`
             : "ningún resultado coincide con los filtros activos";
         }
       } else {
-        list.style.display = "";
+        list.style.display = currentView === "map" ? "none" : "";
         if (empty) empty.style.display = "none";
       }
 
@@ -708,11 +935,15 @@
       if (resetBtnEl) resetBtnEl.classList.toggle("hidden", !isDirty);
 
       updateFiltersCount();
+
       state.loading = false;
     }
 
     /** Alias de `fetchRoutes(true)` para mayor legibilidad en los listeners. */
-    function reload() { fetchRoutes(true); }
+    function reload() {
+      fetchRoutes(true);
+      if (currentView === "map") updateRoutesMap();
+    }
 
     // ============ INFINITE SCROLL ============
     let infiniteObserver = null;
@@ -994,9 +1225,9 @@
     document.querySelectorAll(".view-switch button").forEach(btn => {
       btn.addEventListener("click", () => {
         const view = btn.dataset.view;
-        if (view === "list" || view === "grid") {
+        if (view === "list" || view === "grid" || view === "map") {
           applyView(view);
-          reload();
+          if (view !== "map") reload();
         }
       });
     });
@@ -1004,7 +1235,10 @@
     // ============ THEME SYNC para mini-mapa ============
     const themeObserver = new MutationObserver((mutations) => {
       for (const m of mutations) {
-        if (m.attributeName === "data-theme") syncFeaturedTiles();
+        if (m.attributeName === "data-theme") {
+          syncFeaturedTiles();
+          syncRoutesMapTiles();
+        }
       }
     });
     themeObserver.observe(document.documentElement, { attributes: true });
