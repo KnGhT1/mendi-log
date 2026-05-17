@@ -38,6 +38,14 @@ TRACK_DOWNSAMPLE_POINTS = 400
 
 
 @dataclass
+class WaypointLite:
+    lat: float
+    lon: float
+    elevation: Optional[float]
+    name: Optional[str]
+
+
+@dataclass
 class TrackPointLite:
     seq: int
     lat: float
@@ -63,6 +71,9 @@ class GpxStats:
     elev_line_path: str
     elev_area_path: str
     track: List[TrackPointLite] = field(default_factory=list)
+    # (lat_min, lon_min, lat_max, lon_max) del track completo
+    bbox: Tuple[float, float, float, float] = field(default_factory=lambda: (0.0, 0.0, 0.0, 0.0))
+    waypoints: List[WaypointLite] = field(default_factory=list)
 
 
 # ===== utilidades =====
@@ -293,6 +304,23 @@ def parse_gpx(content: bytes | str) -> GpxStats:
     max_alt = int(round(max(elevations_raw))) if elevations_raw else None
     min_alt = int(round(min(elevations_raw))) if elevations_raw else None
 
+    # ---- waypoints ----
+    waypoints = [
+        WaypointLite(
+            lat=w.latitude,
+            lon=w.longitude,
+            elevation=w.elevation,
+            name=w.name or None,
+        )
+        for w in gpx.waypoints
+        if w.latitude is not None and w.longitude is not None
+    ]
+
+    # ---- bounding box ----
+    lats = [p.latitude for p in pts]
+    lons = [p.longitude for p in pts]
+    bbox = (min(lats), min(lons), max(lats), max(lons))
+
     # ---- perfil SVG ----
     line_path, area_path = _build_elev_paths(cum_dist_m, elev_smooth)
 
@@ -325,4 +353,6 @@ def parse_gpx(content: bytes | str) -> GpxStats:
         elev_line_path=line_path,
         elev_area_path=area_path,
         track=track_lite,
+        bbox=bbox,
+        waypoints=waypoints,
     )

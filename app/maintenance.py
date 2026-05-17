@@ -17,8 +17,9 @@ from app.difficulty import DifficultyInputs, difficulty_level, difficulty_score
 from app.geocoder import reverse_geocode
 from app.gpx_parser import parse_gpx
 from app.importer import user_gpx_dir
-from app.models import Route, TrackPoint
+from app.models import Route, Summit, TrackPoint
 from app.name_cleaner import clean_name, detect_region
+from app.summits import fetch_summits
 from app.text_utils import canonical_geo
 
 
@@ -137,6 +138,15 @@ def reprocesar_stream(db: Session, user_id: int) -> Generator[str, None, None]:
             db.add(TrackPoint(
                 route_id=r.id, seq=pt.seq, lat=pt.lat, lon=pt.lon,
                 elevation_m=pt.elevation, time=pt.time,
+            ))
+
+        db.query(Summit).filter(Summit.route_id == r.id).delete(
+            synchronize_session=False
+        )
+        for s in fetch_summits(stats):
+            db.add(Summit(
+                route_id=r.id, seq=s.seq, lat=s.lat, lon=s.lon,
+                elevation_m=s.elevation_m, name=s.name, source=s.source,
             ))
 
         r.updated_at = datetime.now(UTC)

@@ -13,8 +13,9 @@ from app.db import DATA_DIR
 from app.difficulty import DifficultyInputs, difficulty_level, difficulty_score
 from app.geocoder import reverse_geocode
 from app.gpx_parser import parse_gpx
-from app.models import Route, TrackPoint
+from app.models import Route, Summit, TrackPoint
 from app.name_cleaner import clean_name, detect_region
+from app.summits import fetch_summits
 from app.text_utils import canonical_geo
 
 # Raíz común: los GPX viven en data/gpx/{user_id}/ para aislar por usuario.
@@ -138,6 +139,12 @@ def process_gpx(db: Session, user_id: int, filename: str, content: bytes) -> Imp
         db.add(TrackPoint(
             route_id=route.id, seq=pt.seq, lat=pt.lat, lon=pt.lon,
             elevation_m=pt.elevation, time=pt.time,
+        ))
+
+    for s in fetch_summits(stats):
+        db.add(Summit(
+            route_id=route.id, seq=s.seq, lat=s.lat, lon=s.lon,
+            elevation_m=s.elevation_m, name=s.name, source=s.source,
         ))
 
     return ImportResult(status="ok", filename=filename,
