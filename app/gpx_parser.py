@@ -25,8 +25,8 @@ ELEVATION_SMOOTH_TARGET_M = 25.0
 # Se escala proporcionalmente a la densidad: rutas mas densas -> umbral mayor.
 ELEVATION_GAIN_THRESHOLD_BASE = 8.0
 # Limites de la ventana de suavizado para evitar extremos.
-ELEVATION_SMOOTH_WINDOW_MIN = 5
-ELEVATION_SMOOTH_WINDOW_MAX = 30
+ELEVATION_SMOOTH_WINDOW_MIN = 10
+ELEVATION_SMOOTH_WINDOW_MAX = 50
 # Velocidad minima (m/s) para considerar que el usuario esta en movimiento.
 MIN_MOVING_SPEED_MPS = 0.4
 # Distancia minima (m) entre puntos para descartar ruido GPS.
