@@ -16,10 +16,17 @@ import gpxpy
 import gpxpy.gpx
 
 # ----- Parametros calibracion -----
-# Suavizado de la elevacion para evitar ruido GPS antes de acumular subida.
-ELEVATION_SMOOTH_WINDOW = 10
-# Solo se cuenta como subida si el delta acumulado supera este umbral en m.
-ELEVATION_GAIN_THRESHOLD = 8.0
+# Distancia objetivo de suavizado en metros. La ventana de media movil se
+# calcula dinamicamente como round(ELEVATION_SMOOTH_TARGET_M / mean_spacing_m).
+# Esto hace que rutas densas (GPS cada 1 s) reciban mas suavizado que rutas
+# dispersas (GPS cada 10 s), sin tocar constantes manualmente.
+ELEVATION_SMOOTH_TARGET_M = 25.0
+# Umbral base (m) para considerar un tramo como subida/bajada real.
+# Se escala proporcionalmente a la densidad: rutas mas densas -> umbral mayor.
+ELEVATION_GAIN_THRESHOLD_BASE = 8.0
+# Limites de la ventana de suavizado para evitar extremos.
+ELEVATION_SMOOTH_WINDOW_MIN = 5
+ELEVATION_SMOOTH_WINDOW_MAX = 30
 # Velocidad minima (m/s) para considerar que el usuario esta en movimiento.
 MIN_MOVING_SPEED_MPS = 0.4
 # Distancia minima (m) entre puntos para descartar ruido GPS.
@@ -235,8 +242,16 @@ def parse_gpx(content: bytes | str) -> GpxStats:
 
     distance_m = cum_dist_m[-1]
 
-    # ---- desnivel: suavizado + umbral ----
-    elev_smooth = _moving_average(elevations_raw, ELEVATION_SMOOTH_WINDOW)
+    # ---- desnivel: suavizado adaptativo por densidad de puntos ----
+    # mean_spacing_m: distancia media entre puntos consecutivos con movimiento real
+    moving_deltas = [d for d in deltas_dist_m if d >= MIN_POINT_DISTANCE_M]
+    mean_spacing_m = (sum(moving_deltas) / len(moving_deltas)) if moving_deltas else ELEVATION_SMOOTH_TARGET_M
+    smooth_window = int(round(ELEVATION_SMOOTH_TARGET_M / max(mean_spacing_m, 0.5)))
+    smooth_window = max(ELEVATION_SMOOTH_WINDOW_MIN, min(ELEVATION_SMOOTH_WINDOW_MAX, smooth_window))
+    # El umbral escala con la densidad: mas puntos por metro -> mas ruido acumulado
+    density_factor = ELEVATION_SMOOTH_TARGET_M / max(mean_spacing_m, 0.5)
+    gain_threshold = ELEVATION_GAIN_THRESHOLD_BASE * max(1.0, density_factor / smooth_window)
+    elev_smooth = _moving_average(elevations_raw, smooth_window)
     gain = 0.0
     loss = 0.0
     pending = 0.0  # acumulador del tramo monotono actual
@@ -244,7 +259,7 @@ def parse_gpx(content: bytes | str) -> GpxStats:
         delta = elev_smooth[i] - elev_smooth[i - 1]
         if delta * pending < 0:
             # cambio de signo: vacia el acumulador si supera umbral
-            if abs(pending) >= ELEVATION_GAIN_THRESHOLD:
+            if abs(pending) >= gain_threshold:
                 if pending > 0:
                     gain += pending
                 else:
@@ -252,7 +267,7 @@ def parse_gpx(content: bytes | str) -> GpxStats:
             pending = delta
         else:
             pending += delta
-    if abs(pending) >= ELEVATION_GAIN_THRESHOLD:
+    if abs(pending) >= gain_threshold:
         if pending > 0:
             gain += pending
         else:
