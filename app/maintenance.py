@@ -115,7 +115,7 @@ def reprocesar_stream(db: Session, user_id: int) -> Generator[str, None, None]:
         if not region or not country or not sub_region:
             yield _emit({"type": "progress", "i": i, "name": r.name,
                          "status": "geocoding", "detail": "consultando zona"})
-            geo_country, geo_region, geo_sub = reverse_geocode(r.start_lat, r.start_lon)
+            geo_country, geo_region, geo_sub = reverse_geocode(r.start_lat, r.start_lon, db=db)
             country = country or geo_country
             region = region or geo_region
             sub_region = sub_region or geo_sub
@@ -192,7 +192,7 @@ def backfill_stream(db: Session, user_id: int) -> Generator[str, None, None]:
     for i, r in enumerate(pending, start=1):
         yield _emit({"type": "progress", "i": i, "name": r.name,
                      "status": "geocoding", "detail": "consultando zona"})
-        country, region, sub_region = reverse_geocode(r.start_lat, r.start_lon)
+        country, region, sub_region = reverse_geocode(r.start_lat, r.start_lon, db=db)
         if not region and not sub_region and not country:
             failed += 1
             yield _emit({"type": "progress", "i": i, "name": r.name,
