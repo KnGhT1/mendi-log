@@ -248,14 +248,23 @@
 
         <div class="pop-section">
           <div class="pop-section-label">Región</div>
-          <div class="ctrl-select-wrap">
-            <select class="ctrl-select" id="filter-region">
-              <option value="all">todas</option>
-              {% for facet in data.regions %}
-              <option value="{{ facet.key }}">{{ facet.label }} ({{ facet.count }})</option>
-              {% endfor %}
-            </select>
-            <span class="ctrl-select-chev"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span>
+          <div class="region-combo" id="region-combo">
+            <div class="region-combo-trigger" id="region-combo-trigger" tabindex="0" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="region-combo-list">
+              <span class="region-combo-value" id="region-combo-value">todas</span>
+              <svg class="region-combo-chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+            <div class="region-combo-dropdown" id="region-combo-dropdown" role="listbox">
+              <div class="region-combo-search-wrap">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-5-5"/></svg>
+                <input type="text" id="filter-region-search" class="region-combo-search" placeholder="Buscar región…" autocomplete="off" role="searchbox">
+              </div>
+              <ul class="region-combo-list" id="region-combo-list">
+                <li class="region-combo-opt" data-value="all" data-country="" role="option">todas</li>
+                {% for facet in data.regions %}
+                <li class="region-combo-opt" data-value="{{ facet.key }}" data-country="{{ facet.country }}" role="option">{{ facet.label }} <span class="region-combo-count">({{ facet.count }})</span></li>
+                {% endfor %}
+              </ul>
+            </div>
           </div>
         </div>
 

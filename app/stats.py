@@ -143,6 +143,7 @@ class RegionFacet:
     key: str
     label: str
     count: int
+    country: str = ""  # clave canónica del país al que pertenece esta región
 
 
 @dataclass
@@ -691,8 +692,23 @@ def build_rutas(db: Session, user_id: int) -> RutasData:
         label = _region_label(region_text, sub_text)
         if key not in label_by_key or len(label) > len(label_by_key[key]):
             label_by_key[key] = label
+    # Mapa región_key → country_key: query GROUP BY (region, country)
+    region_country_rows = (
+        db.query(Route.region, Route.country, func.count(Route.id))
+        .filter(Route.user_id == user_id)
+        .group_by(Route.region, Route.country)
+        .all()
+    )
+    _rc_best: Dict[str, tuple[str, int]] = {}  # rkey → (ckey, count)
+    for reg_text, cou_text, cnt in region_country_rows:
+        rkey = _region_key(reg_text)
+        ckey = _country_key(cou_text)
+        if rkey not in _rc_best or cnt > _rc_best[rkey][1]:
+            _rc_best[rkey] = (ckey, int(cnt))
+
     regions = [
-        RegionFacet(key=k, label=label_by_key.get(k, k), count=c)
+        RegionFacet(key=k, label=label_by_key.get(k, k), count=c,
+                    country=_rc_best.get(k, ("", 0))[0])
         for k, c in counter_keys.most_common()
     ]
 
