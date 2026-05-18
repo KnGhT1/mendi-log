@@ -982,6 +982,7 @@
      */
     function onDocClick() {
       if (filtersPopover && filtersPopover.classList.contains("open")) closeFilters();
+      _regionClose();
     }
     /**
      * Listener global de teclado en `document`:
@@ -1067,6 +1068,162 @@
     bindSelect("filter-region", "region");
     bindSelect("filter-distance", "distance");
     bindSelect("filter-gain", "gain");
+
+    // ============ PAÍS + REGIÓN COMBOBOX ============
+    const countrySelect = $("filter-country");
+    const regionCombo = $("region-combo");
+    const regionTrigger = $("region-combo-trigger");
+    const regionDropdown = $("region-combo-dropdown");
+    const regionValueEl = $("region-combo-value");
+    const regionSearchInput = $("filter-region-search");
+    const regionList = $("region-combo-list");
+
+    function _regionOpen() {
+      if (!regionDropdown) return;
+      regionDropdown.classList.add("open");
+      if (regionCombo) regionCombo.dataset.open = "";
+      if (regionTrigger) regionTrigger.setAttribute("aria-expanded", "true");
+      if (regionSearchInput) { regionSearchInput.value = ""; regionSearchInput.focus(); }
+      _regionFilter("");
+    }
+
+    function _regionClose() {
+      if (!regionDropdown) return;
+      regionDropdown.classList.remove("open");
+      if (regionCombo) delete regionCombo.dataset.open;
+      if (regionTrigger) regionTrigger.setAttribute("aria-expanded", "false");
+    }
+
+    function _regionFilter(term) {
+      if (!regionList) return;
+      const country = state.filters.country;
+      const t = term.toLowerCase();
+      Array.from(regionList.children).forEach(li => {
+        const val = li.dataset.value;
+        if (val === "all") { li.hidden = false; return; }
+        const matchCountry = country === "all" || li.dataset.country === country;
+        const matchSearch = !t || li.textContent.toLowerCase().includes(t);
+        li.hidden = !(matchCountry && matchSearch);
+      });
+    }
+
+    function _regionSelect(value, label) {
+      state.filters.region = value;
+      if (regionValueEl) {
+        regionValueEl.textContent = label;
+        regionValueEl.classList.toggle("selected", value !== "all");
+      }
+      // Marcar aria-selected
+      if (regionList) {
+        Array.from(regionList.children).forEach(li => {
+          li.setAttribute("aria-selected", li.dataset.value === value ? "true" : "false");
+        });
+      }
+      _regionClose();
+      reload();
+    }
+
+    function _regionReset() {
+      state.filters.region = "all";
+      if (regionValueEl) { regionValueEl.textContent = "todas"; regionValueEl.classList.remove("selected"); }
+      if (regionList) Array.from(regionList.children).forEach(li => li.setAttribute("aria-selected", "false"));
+    }
+
+    if (regionTrigger) {
+      regionTrigger.addEventListener("click", (e) => {
+        e.stopPropagation();
+        regionDropdown && regionDropdown.classList.contains("open") ? _regionClose() : _regionOpen();
+      });
+      regionTrigger.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); _regionOpen(); }
+      });
+    }
+
+    if (regionSearchInput) {
+      regionSearchInput.addEventListener("input", e => _regionFilter(e.target.value));
+      regionSearchInput.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") { _regionClose(); regionTrigger && regionTrigger.focus(); }
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          const first = regionList && Array.from(regionList.children).find(li => !li.hidden);
+          if (first) first.focus();
+        }
+      });
+    }
+
+    if (regionList) {
+      regionList.addEventListener("click", (e) => {
+        const li = e.target.closest(".region-combo-opt");
+        if (!li || li.hidden) return;
+        // Label: solo el texto del nodo de texto, sin el span de count
+        const countSpan = li.querySelector(".region-combo-count");
+        const label = li.textContent.replace(countSpan ? countSpan.textContent : "", "").trim();
+        _regionSelect(li.dataset.value, label);
+      });
+      regionList.addEventListener("keydown", (e) => {
+        const li = e.target.closest(".region-combo-opt");
+        if (!li) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          li.click();
+        } else if (e.key === "ArrowDown") {
+          e.preventDefault();
+          let next = li.nextElementSibling;
+          while (next && next.hidden) next = next.nextElementSibling;
+          if (next) next.focus();
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          let prev = li.previousElementSibling;
+          while (prev && prev.hidden) prev = prev.previousElementSibling;
+          if (prev) prev.focus(); else if (regionSearchInput) regionSearchInput.focus();
+        } else if (e.key === "Escape") {
+          _regionClose(); regionTrigger && regionTrigger.focus();
+        }
+      });
+      // Hacer los li focusables
+      Array.from(regionList.children).forEach(li => li.setAttribute("tabindex", "-1"));
+    }
+
+    if (regionDropdown) {
+      // No stopPropagation aquí: el clic dentro del dropdown debe llegar
+      // al listener del popover para que éste no se cierre, pero el
+      // combobox se cierra por su propio listener de focusout.
+    }
+
+    // Cerrar el combobox cuando el foco sale del conjunto trigger+dropdown.
+    // focusout burbujea desde cualquier hijo, y relatedTarget indica a dónde
+    // va el foco. Si el destino está fuera del combobox, cerramos.
+    if (regionCombo) {
+      regionCombo.addEventListener("focusout", (e) => {
+        if (!regionCombo.contains(e.relatedTarget)) _regionClose();
+      });
+    }
+
+    // Clic en cualquier parte del popover fuera del combobox también cierra.
+    if (filtersPopover) {
+      filtersPopover.addEventListener("click", (e) => {
+        if (regionCombo && !regionCombo.contains(e.target)) _regionClose();
+      });
+    }
+
+    if (countrySelect) {
+      countrySelect.addEventListener("change", e => {
+        state.filters.country = e.target.value;
+        _regionReset();
+        _regionFilter(regionSearchInput ? regionSearchInput.value : "");
+        reload();
+      });
+    }
+
+    // Cerrar combobox al hacer clic fuera — onDocClick ya existe y cierra
+    // el popover de filtros; lo extendemos para cerrar también el combobox.
+    // Nota: no re-registramos el listener, simplemente añadimos _regionClose()
+    // dentro del onDocClick original que ya está registrado arriba.
+    // Para ello redefinimos la función antes de que se registre.
+    // (La función onDocClick se define más arriba en el scope; aquí la
+    // sobreescribimos con una versión que también cierra el combobox.)
+
+    _regionFilter("");
 
     // ============ DATE RANGE PICKER ============
     const dateFrom = $("filter-date-from");
@@ -1179,10 +1336,12 @@
           const lvl = chip.dataset.filter;
           chip.classList.toggle("active", DEFAULT_DIFFICULTY.includes(lvl));
         });
-        ["filter-country", "filter-region", "filter-distance", "filter-gain"].forEach(id => {
+        ["filter-country", "filter-distance", "filter-gain"].forEach(id => {
           const el = $(id);
           if (el) el.value = "all";
         });
+        _regionReset();
+        _regionFilter("");
         if (dateFrom) dateFrom.value = "";
         if (dateTo) dateTo.value = "";
         updateDateClear();
