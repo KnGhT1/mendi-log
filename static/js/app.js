@@ -473,7 +473,8 @@
     const PAD_L = 36, PAD_R = 16, PAD_T = 18, PAD_B = 26;
     const innerW = W - PAD_L - PAD_R;
     const innerH = H - PAD_T - PAD_B;
-    const maxV = Math.max(...months.map(m => m.v), 16);
+    // fix: maxV dinamico sin minimo artificial de 16
+    const maxV = Math.max(...months.map(m => m.v), 1);
     const xStep = innerW / Math.max(1, months.length - 1);
 
     const cAccent = cssVar("--accent");
@@ -484,11 +485,13 @@
 
     let html = "";
 
-    [0, 5, 10, 15].forEach(g => {
+    // fix: guias del eje Y dinamicas basadas en maxV
+    const gridStep = maxV <= 10 ? 2 : maxV <= 30 ? 5 : maxV <= 100 ? 20 : 50;
+    for (let g = 0; g <= maxV; g += gridStep) {
       const y = PAD_T + innerH - (g / maxV) * innerH;
-      html += `<line x1="${PAD_L}" x2="${W - PAD_R}" y1="${y}" y2="${y}" stroke="${cBorder}" stroke-width="0.8" stroke-dasharray="2 4"/>`;
-      html += `<text x="${PAD_L - 8}" y="${y + 3}" text-anchor="end" font-family="IBM Plex Mono" font-size="9" fill="${cDim}">${g}</text>`;
-    });
+      html += `<line x1="${PAD_L}" x2="${W - PAD_R}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${cBorder}" stroke-width="0.8" stroke-dasharray="2 4"/>`;
+      html += `<text x="${PAD_L - 8}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-family="IBM Plex Mono" font-size="9" fill="${cDim}">${g}</text>`;
+    }
 
     let path = "", area = "";
     months.forEach((p, i) => {
@@ -500,7 +503,8 @@
     });
     area += ` L ${PAD_L + (months.length - 1) * xStep} ${PAD_T + innerH} Z`;
 
-    const gradId = "m-grad-" + Math.random().toString(36).slice(2, 7);
+    // fix: ID de gradiente fijo, sin Math.random()
+    const gradId = "m-grad-monthly";
     html += `<defs><linearGradient id="${gradId}" x1="0" x2="0" y1="0" y2="1">
         <stop offset="0%" stop-color="${cAccent}" stop-opacity="0.35"/>
         <stop offset="100%" stop-color="${cAccent}" stop-opacity="0"/>
@@ -515,7 +519,9 @@
         html += `<circle cx="${x}" cy="${y}" r="3.5" fill="${cBg}" stroke="${cAccent}" stroke-width="1.6"/>`;
         html += `<text x="${x}" y="${y - 9}" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="${cText}">${p.v.toFixed(1)}</text>`;
       }
-      if (i % 2 === 0) {
+      // fix: etiquetas X en todos los meses, saltando las impares solo si hay
+      // mas de 8 meses para evitar solapamiento
+      if (months.length <= 8 || i % 2 === 0) {
         html += `<text x="${x}" y="${H - 8}" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="${cDim}" letter-spacing="0.05em">${p.m}</text>`;
       }
     });
