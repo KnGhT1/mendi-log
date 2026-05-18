@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 SUMMIT_MAX_DIST_M = 150
-OVERPASS_TIMEOUT_S = 30
+OVERPASS_TIMEOUT_S = 5
 
 
 @dataclass
