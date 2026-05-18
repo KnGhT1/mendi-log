@@ -222,11 +222,23 @@ html[data-theme="light"] {
   grid-template-columns: 1fr 280px;
   min-width: 0;
 }
+.map-card-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
 .detail-map-wrap {
   position: relative;
-  height: auto;
+  height: 420px;
   overflow: hidden;
   min-width: 0;
+}
+/* Perfil integrado bajo el mapa */
+.elev-card--inline {
+  border: none;
+  border-top: 1px solid var(--border);
+  box-shadow: none;
 }
 #detail-map {
   position: absolute;
@@ -390,7 +402,7 @@ html[data-theme="light"] .marker-pin.summit { background: rgba(184,133,63,0.12);
 
 .elev-chart-wrap {
   position: relative;
-  height: 280px;
+  height: 180px;
   background: var(--surface);
 }
 #elev-svg {
@@ -1170,4 +1182,31 @@ html[data-theme="light"] .modal-backdrop {
   .notes-grid { grid-template-columns: 1fr; }
   .map-card { grid-template-columns: 1fr; }
   .map-side { border-left: none; border-top: 1px solid var(--border); }
+}
+
+/* ===== Control de cimas en el mapa ===== */
+.mendi-summit-ctrl {
+  display: flex;
+  flex-direction: column;
+}
+.mendi-ctrl-btn {
+  width: 30px;
+  height: 30px;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface) !important;
+  color: var(--text-muted) !important;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-bottom: 1px solid var(--border) !important;
+}
+.mendi-ctrl-btn:last-child { border-bottom: none !important; }
+.mendi-ctrl-btn:hover {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+}
+.mendi-ctrl-btn.active {
+  background: var(--surface-2) !important;
+  color: var(--accent-warm) !important;
 }

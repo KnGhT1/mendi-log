@@ -124,13 +124,23 @@ class ElevAxisLabels:
 
 
 @dataclass
+class ElevSummitMark:
+    summit_id: int
+    x: float        # 0..800
+    y: float        # 0..280
+    alt_str: str
+    name: str
+
+
+@dataclass
 class ElevProfile:
     line: str                   # SVG path "M ..." (viewBox 800x280)
     area: str
-    summit_x: float             # 0..800, posicion x del marker cima
-    summit_y: float             # 0..280, posicion y del marker cima
-    summit_alt_str: str         # "1.121"
-    samples: List[dict]         # [{x, y, km, alt, t_iso, t_str, grad_pct}]
+    summit_x: float             # cima principal (compat)
+    summit_y: float
+    summit_alt_str: str
+    summits: List[ElevSummitMark]  # todas las cimas
+    samples: List[dict]
     axis: ElevAxisLabels
 
 
@@ -425,7 +435,7 @@ def _build_elev_profile(
     if not cum2d or len(cum2d) < 2:
         return ElevProfile(
             line="", area="", summit_x=0, summit_y=0, summit_alt_str="—",
-            samples=[], axis=ElevAxisLabels(y=[], x=[]),
+            summits=[], samples=[], axis=ElevAxisLabels(y=[], x=[]),
         )
 
     total = cum2d[-1]
@@ -486,15 +496,10 @@ def _build_elev_profile(
         + f" L {samples[-1]['x']:.0f},{height} L {samples[0]['x']:.0f},{height} Z"
     )
 
-    # cima (max elevation): localizamos en samples
-    summit_idx = max(range(len(samples)), key=lambda k: samples[k]["alt"])
-    summit_sample = samples[summit_idx]
-
-    # axis labels: 5 niveles de altitud (de arriba abajo) y 5 de distancia
+    # axis labels
     y_steps = 4
     y_labels = []
     for s in range(y_steps + 1):
-        # de e_max a e_min
         ele = e_max - (e_max - e_min) * (s / y_steps)
         y_labels.append(f"{_fmt_int(int(round(ele)))} m")
 
@@ -504,12 +509,17 @@ def _build_elev_profile(
         km = total_km * s / 4
         x_labels.append(f"{_fmt_km_short(km)} km" if km > 0 else "0 km")
 
+    # cima principal (max elevation en samples) para compat
+    summit_idx = max(range(len(samples)), key=lambda k: samples[k]["alt"])
+    summit_sample = samples[summit_idx]
+
     return ElevProfile(
         line=line,
         area=area,
         summit_x=float(summit_sample["x"]),
         summit_y=float(summit_sample["y"]),
         summit_alt_str=_fmt_int(summit_sample["alt"]),
+        summits=[],  # se rellena en build_detail con los Summit reales
         samples=samples,
         axis=ElevAxisLabels(y=y_labels, x=x_labels),
     )
@@ -885,8 +895,25 @@ def build_detail(db: Session, user_id: int, route_id: int) -> Optional[DetailDat
 
     slope_avg_pct, slope_max_pct, hardest_km = _compute_slopes(points, cum2d) if points else (0.0, 0.0, 1)
 
+    # Si no hay summits en BD, generar fallback desde el punto más alto del track
+    effective_summits: List[Summit] = list(summits)
+    if not effective_summits and points:
+        best = max(
+            (p for p in points if p.elevation_m is not None),
+            key=lambda p: p.elevation_m or -9999,
+            default=None,
+        )
+        if best:
+            fallback = Summit(
+                id=-1, route_id=route.id, seq=0,
+                lat=best.lat, lon=best.lon,
+                elevation_m=int(round(best.elevation_m)),
+                name=None, source="fallback",
+            )
+            effective_summits = [fallback]
+
     milestones, summit_lat, summit_lon = _build_milestones(
-        route, points, summits, cum2d, total_km_2d, alt_min, alt_max
+        route, points, effective_summits, cum2d, total_km_2d, alt_min, alt_max
     )
 
     elev_strip = ElevStrip(
@@ -898,6 +925,46 @@ def build_detail(db: Session, user_id: int, route_id: int) -> Optional[DetailDat
         slope_max_str=f"{_fmt_pct(slope_max_pct)} %",
     )
 
+    elev = _build_elev_profile(points, cum2d) if points else ElevProfile(
+        line="", area="", summit_x=0, summit_y=0, summit_alt_str="—",
+        summits=[], samples=[], axis=ElevAxisLabels(y=[], x=[]),
+    )
+
+    # Calcular posición SVG de cada cima en el perfil
+    if points and cum2d and elev.samples and effective_summits:
+        total_m = cum2d[-1]
+        e_vals = [s["alt"] for s in elev.samples]
+        e_min_s = min(e_vals)
+        e_max_s = max(e_vals)
+        height_svg, margin_top, margin_bottom = 280, 28, 14
+        inner_h = height_svg - margin_top - margin_bottom
+        summit_marks: List[ElevSummitMark] = []
+        for s in effective_summits:
+            best_i = min(
+                range(len(points)),
+                key=lambda i, _s=s: (points[i].lat - _s.lat) ** 2 + (points[i].lon - _s.lon) ** 2,
+            )
+            km_s = cum2d[best_i] / 1000.0
+            x_s = (km_s / (total_m / 1000.0)) * 800.0 if total_m > 0 else 0.0
+            # Altitud: usar la del Summit si existe, si no interpolar del perfil
+            if s.elevation_m is not None:
+                alt_s = s.elevation_m
+            else:
+                # Buscar el sample más cercano en x
+                x_norm = x_s / 800.0
+                sample_idx = min(range(len(elev.samples)),
+                                 key=lambda i: abs(elev.samples[i]["x"] / 800.0 - x_norm))
+                alt_s = elev.samples[sample_idx]["alt"]
+            y_s = margin_top + inner_h * (1 - (alt_s - e_min_s) / max(1, e_max_s - e_min_s))
+            summit_marks.append(ElevSummitMark(
+                summit_id=s.id,
+                x=round(x_s, 1),
+                y=round(y_s, 1),
+                alt_str=_fmt_int(alt_s),
+                name=s.name or f"Cima {s.seq + 1}",
+            ))
+        elev.summits = summit_marks
+
     prev_route, next_route = _route_neighbors(db, user_id, route)
 
     return DetailData(
@@ -907,10 +974,7 @@ def build_detail(db: Session, user_id: int, route_id: int) -> Optional[DetailDat
         hero=_build_hero(db, user_id, route),
         map=_build_map(route, points, milestones),
         elev_strip=elev_strip,
-        elev=_build_elev_profile(points, cum2d) if points else ElevProfile(
-            line="", area="", summit_x=0, summit_y=0, summit_alt_str="—",
-            samples=[], axis=ElevAxisLabels(y=[], x=[]),
-        ),
+        elev=elev,
         tech=_build_tech(
             route, points, cum2d, total2d, total3d, total_km_2d,
             alt_min, alt_max, slope_avg_pct, slope_max_pct, hardest_km,

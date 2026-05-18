@@ -73,7 +73,10 @@
 
   function init() {
     const D = window.MENDI_DETAIL || {};
-    const ROUTE_ID = D.id;
+    // Leer el ID desde la URL para garantizar que es correcto tras swaps HTMX
+    // (los <script> del swap pueden no re-ejecutarse antes de init())
+    const urlMatch = window.location.pathname.match(/\/rutas\/(\d+)/);
+    const ROUTE_ID = urlMatch ? parseInt(urlMatch[1], 10) : D.id;
     // Si el bloque de hidratación no se ejecutó (p.ej. swap parcial sin
     // datos), abortamos en silencio. Sin esto, fetch(`/api/rutas/undefined/...`)
     // dispara un 422 ruidoso en consola.
@@ -84,6 +87,11 @@
     let darkTiles, lightTiles, darkLabels, lightLabels;
     let trackPolyline = null;
     let trackOutline = null;
+    let trackPoints = [];  // copia del track para el cursor del perfil
+    let trackCumKm = [];   // distancias acumuladas en km para cada punto
+    // Marcadores de cima arrastrables: Map<summit_id, L.Marker>
+    const summitMarkers = new Map();
+    let addSummitMode = false;
 
     /**
      * Oculta el overlay de carga del mapa de detalle (`#detail-map-loading`)
@@ -131,6 +139,12 @@
      */
     function _buildMap(el) {
       if (detailMap) return;
+      // Limpiar cualquier instancia Leaflet residual en el contenedor
+      if (el._leaflet_id) {
+        try { el._leaflet_id = undefined; } catch (_) {}
+      }
+      el.innerHTML = "";
+      el.className = el.className.replace(/\bleaflet-[\w-]+/g, "").trim();
 
       detailMap = L.map(el, {
         zoomControl: true,
@@ -161,6 +175,8 @@
         detailMap = null;
         darkTiles = lightTiles = darkLabels = lightLabels = undefined;
         trackPolyline = trackOutline = null;
+        trackPoints = []; trackCumKm = [];
+        profileCursorMarker = null;
       });
 
       _fetchTrack();
@@ -183,6 +199,17 @@
 
         if (!track.length || !detailMap) { hideMapLoading(); return; }
 
+        // Guardar track y calcular distancias acumuladas para el cursor del perfil
+        trackPoints = track;
+        trackCumKm = [0];
+        for (let i = 1; i < track.length; i++) {
+          const a = track[i - 1], b = track[i];
+          const toRad = d => d * Math.PI / 180;
+          const dLat = toRad(b[0] - a[0]), dLon = toRad(b[1] - a[1]);
+          const s = Math.sin(dLat/2)**2 + Math.cos(toRad(a[0]))*Math.cos(toRad(b[0]))*Math.sin(dLon/2)**2;
+          trackCumKm.push(trackCumKm[i-1] + 2 * 6371.0088 * Math.asin(Math.sqrt(s)));
+        }
+
         const color = levelColor(D.level);
         trackOutline = L.polyline(track, {
           color: "#000", opacity: 0.35, weight: 6, lineCap: "round", lineJoin: "round",
@@ -192,6 +219,7 @@
         }).addTo(detailMap);
 
         milestones.forEach((m) => {
+          if (m.kind === "summit") return; // gestionados por _addSummitMarker o fallback
           const pt = _milestonePoint(m, track);
           if (!pt) return;
           const marker = L.marker(pt, { icon: buildPinIcon(m) }).addTo(detailMap);
@@ -209,9 +237,24 @@
         detailMap.fitBounds(target, { padding: [30, 30] });
         hideMapLoading();
 
+        // Marcadores de cima arrastrables
+        const summits = json.summits || [];
+        if (summits.length > 0) {
+          summits.forEach((s) => _addSummitMarker(s));
+        } else {
+          // Fallback: pintar los milestones de tipo summit como marcadores fijos
+          milestones.filter(m => m.kind === "summit").forEach((m) => {
+            const pt = _milestonePoint(m, track);
+            if (!pt) return;
+            const marker = L.marker(pt, { icon: buildPinIcon(m) }).addTo(detailMap);
+            marker.bindPopup(`<div style="font-family:Fraunces,serif;font-size:14px;font-weight:500;">${escapeHtml(m.name)}</div><div style="font-family:'IBM Plex Mono',monospace;font-size:11px;opacity:0.75;">${fmtInt(m.elev_m)} m · km ${fmtKm(m.km)}</div>`);
+          });
+        }
+        _bindMapClickForSummit();
+
         if (elevSamples.length >= 2) initElevHover(elevSamples);
 
-      } catch (_) {
+      } catch (err) {
         hideMapLoading();
       }
     }
@@ -286,6 +329,251 @@
         if (!detailMap.hasLayer(darkTiles)) darkTiles.addTo(detailMap);
         if (!detailMap.hasLayer(darkLabels)) darkLabels.addTo(detailMap);
       }
+    }
+
+    function _csrfHeaders(extra) {
+      const meta = document.querySelector('meta[name="csrf-token"]');
+      const token = meta ? meta.getAttribute("content") : "";
+      return Object.assign({ "Content-Type": "application/json", "X-CSRF-Token": token }, extra);
+    }
+
+    // ============ CURSOR PERFIL → MAPA ============
+    let profileCursorMarker = null;
+
+    function _showProfileCursor(km) {
+      if (!detailMap || !trackPoints.length) return;
+      // Búsqueda binaria del punto más cercano al km dado
+      let lo = 0, hi = trackCumKm.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (trackCumKm[mid] < km) lo = mid + 1;
+        else hi = mid;
+      }
+      const a = trackCumKm[Math.max(0, lo - 1)];
+      const b = trackCumKm[lo];
+      const idx = Math.abs(a - km) < Math.abs(b - km) ? Math.max(0, lo - 1) : lo;
+      const pt = trackPoints[idx];
+
+      const warm = cssVar("--accent-warm") || "#E8B86D";
+      const bg = cssVar("--bg") || "#0e1014";
+      const icon = L.divIcon({
+        html: `<div style="width:14px;height:14px;border-radius:50%;background:${warm};border:2px solid ${bg};box-shadow:0 0 0 2px ${warm};"></div>`,
+        className: "",
+        iconSize: [14, 14],
+        iconAnchor: [7, 7],
+      });
+
+      if (!profileCursorMarker) {
+        profileCursorMarker = L.marker(pt, { icon, interactive: false, zIndexOffset: 1000 }).addTo(detailMap);
+      } else {
+        profileCursorMarker.setLatLng(pt);
+        profileCursorMarker.setIcon(icon);
+      }
+    }
+
+    function _hideProfileCursor() {
+      if (profileCursorMarker) {
+        profileCursorMarker.remove();
+        profileCursorMarker = null;
+      }
+    }
+
+    // ============ CIMAS ============
+
+    function _summitIcon() {
+      const warm = cssVar("--accent-warm") || "#E8B86D";
+      const bg = cssVar("--bg") || "#0e1014";
+      const fill = isLight() ? "rgba(184,133,63,0.18)" : "rgba(232,184,109,0.18)";
+      const html = `<div style="width:26px;height:26px;border-radius:50%;border:2px solid ${warm};background:${fill};display:grid;place-items:center;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:${warm};box-shadow:0 0 0 3px ${bg};">&#9650;</div>`;
+      return L.divIcon({ html, className: "mendi-marker", iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -16] });
+    }
+
+    function _addSummitMarker(summit) {
+      if (!detailMap) return;
+      const marker = L.marker([summit.lat, summit.lon], {
+        icon: _summitIcon(),
+        draggable: D.canEdit,
+      });
+      const popupContent = () => {
+        const name = summit.name || "Cima";
+        let html = `<div style="font-family:'IBM Plex Sans',sans-serif;min-width:160px;">`;
+        html += `<div style="font-family:Fraunces,serif;font-size:14px;font-weight:500;margin-bottom:6px;">${escapeHtml(name)}</div>`;
+        if (summit.elevation_m) html += `<div style="font-family:'IBM Plex Mono',monospace;font-size:11px;opacity:0.75;">${fmtInt(summit.elevation_m)} m</div>`;
+        if (D.canEdit) {
+          html += `<div style="margin-top:8px;display:flex;gap:6px;">`;
+          html += `<input id="summit-name-${summit.id}" type="text" value="${escapeHtml(name)}" maxlength="60"
+            style="flex:1;background:var(--surface-2);border:1px solid var(--border-2);color:var(--text);
+            font-family:var(--mono);font-size:11px;padding:3px 6px;border-radius:4px;outline:none;">`;
+          html += `<button onclick="window._saveSummitName(${summit.id})" style="background:var(--accent);color:var(--bg);border:none;padding:3px 8px;border-radius:4px;font-family:var(--mono);font-size:10px;cursor:pointer;">ok</button>`;
+          html += `<button onclick="window._deleteSummit(${summit.id})" style="background:var(--danger);color:#fff;border:none;padding:3px 8px;border-radius:4px;font-family:var(--mono);font-size:10px;cursor:pointer;">x</button>`;
+          html += `</div>`;
+        }
+        html += `</div>`;
+        return html;
+      };
+      marker.bindPopup(popupContent(), { maxWidth: 260 });
+      marker.on("popupopen", () => marker.setPopupContent(popupContent()));
+
+      if (D.canEdit) {
+        marker.on("dragend", async (e) => {
+          const { lat, lng } = e.target.getLatLng();
+          try {
+            const res = await fetch(`/api/rutas/${ROUTE_ID}/summits/${summit.id}`, {
+              method: "PATCH",
+              headers: _csrfHeaders(),
+              body: JSON.stringify({ lat, lon: lng }),
+            });
+            if (res.ok) await _refreshSummits();
+          } catch (_) {}
+        });
+      }
+
+      marker.addTo(detailMap);
+      summitMarkers.set(summit.id, marker);
+    }
+
+    // Refresca marcadores de cima en mapa y perfil SVG sin recargar la página
+    async function _refreshSummits() {
+      try {
+        const res = await fetch(`/api/rutas/${ROUTE_ID}/track`);
+        if (!res.ok) return;
+        const json = await res.json();
+
+        // Limpiar marcadores existentes del mapa
+        summitMarkers.forEach((m) => m.remove());
+        summitMarkers.clear();
+
+        // Repintar marcadores en el mapa
+        (json.summits || []).forEach((s) => _addSummitMarker(s));
+
+        // Repintar marcadores en el perfil SVG
+        const marksGroup = document.getElementById("summit-marks");
+        if (marksGroup) {
+          marksGroup.innerHTML = (json.summits || []).map((s) =>
+            `<g class="summit-mark" data-summit-id="${s.id}" transform="translate(${Math.round(s.x)}, ${Math.round(s.y)})">
+              <line x1="0" y1="0" x2="0" y2="14" stroke="var(--accent-warm)" stroke-width="1" stroke-dasharray="2 2"/>
+              <circle cx="0" cy="0" r="4" fill="var(--accent-warm)" stroke="var(--bg)" stroke-width="2"/>
+              <text x="6" y="-4" font-family="IBM Plex Mono" font-size="10" fill="var(--accent-warm)" letter-spacing="0.05em" transform="rotate(45, 6, -4)">▲ ${s.name || "Cima"} · ${s.alt_str} m</text>
+            </g>`
+          ).join("");
+        }
+
+        // Repintar hitos del sidebar
+        const milestones = json.milestones || [];
+        const sidebarItems = document.querySelectorAll(".marker-item");
+        // Eliminar los hitos de tipo summit existentes y reconstruirlos
+        const summitItems = [...sidebarItems].filter(el => el.querySelector(".marker-pin.summit"));
+        summitItems.forEach(el => el.remove());
+
+        // Insertar los nuevos hitos de summit antes del hito "end"
+        const endItem = [...document.querySelectorAll(".marker-item")].find(el => el.querySelector(".marker-pin.end"));
+        const summitMilestones = milestones.filter(m => m.kind === "summit");
+        summitMilestones.forEach((m) => {
+          const div = document.createElement("div");
+          div.className = "marker-item";
+          div.innerHTML =
+            `<div class="marker-pin summit">▲</div>` +
+            `<div class="marker-info">` +
+              `<div class="name">${m.name || "Cima"}</div>` +
+              `<div class="sub">${m.label}</div>` +
+            `</div>` +
+            `<div class="marker-meta">` +
+              `<span>${fmtInt(m.elev_m)} m</span>` +
+              `<span class="km">${fmtKm(m.km)} km</span>` +
+            `</div>`;
+          if (endItem) endItem.before(div);
+        });
+
+      } catch (_) {}
+    }
+
+    window._saveSummitName = async (summitId) => {
+      const input = document.getElementById(`summit-name-${summitId}`);
+      if (!input) return;
+      const name = input.value.trim();
+      try {
+        const res = await fetch(`/api/rutas/${ROUTE_ID}/summits/${summitId}`, {
+          method: "PATCH",
+          headers: _csrfHeaders(),
+          body: JSON.stringify({ name }),
+        });
+        if (res.ok) await _refreshSummits();
+      } catch (_) {}
+    };
+
+    window._deleteSummit = async (summitId) => {
+      try {
+        const res = await fetch(`/api/rutas/${ROUTE_ID}/summits/${summitId}`, {
+          method: "DELETE",
+          headers: _csrfHeaders(),
+        });
+        if (res.ok) await _refreshSummits();
+      } catch (_) {}
+    };
+
+    function initAddSummitMode() {
+      // El control se crea en _buildMap una vez que el mapa existe
+    }
+
+    function _bindMapClickForSummit() {
+      if (!detailMap || !D.canEdit) return;
+
+      // Control personalizado: mano (pan) y pin (añadir cima)
+      const SummitControl = L.Control.extend({
+        options: { position: "topright" },
+        onAdd() {
+          const container = L.DomUtil.create("div", "leaflet-bar leaflet-control mendi-summit-ctrl");
+          L.DomEvent.disableClickPropagation(container);
+
+          const btnPan = L.DomUtil.create("a", "mendi-ctrl-btn mendi-ctrl-pan active", container);
+          btnPan.title = "Mover mapa";
+          btnPan.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M18 11V8a2 2 0 00-4 0v3M14 8V6a2 2 0 00-4 0v5M10 9V7a2 2 0 00-4 0v8l-1-1a2 2 0 00-3 3l4 4a6 6 0 006 0 6 6 0 006-6V11a2 2 0 00-4 0" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+          const btnPin = L.DomUtil.create("a", "mendi-ctrl-btn mendi-ctrl-pin", container);
+          btnPin.title = "Añadir cima";
+          btnPin.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="9" r="2.5" fill="currentColor" stroke="none"/></svg>`;
+
+          L.DomEvent.on(btnPan, "click", () => {
+            addSummitMode = false;
+            btnPan.classList.add("active");
+            btnPin.classList.remove("active");
+            detailMap.getContainer().style.cursor = "";
+            detailMap.dragging.enable();
+          });
+
+          L.DomEvent.on(btnPin, "click", () => {
+            addSummitMode = true;
+            btnPin.classList.add("active");
+            btnPan.classList.remove("active");
+            detailMap.getContainer().style.cursor = "crosshair";
+          });
+
+          return container;
+        },
+      });
+
+      new SummitControl().addTo(detailMap);
+
+      detailMap.on("click", async (e) => {
+        if (!addSummitMode) return;
+        const { lat, lng } = e.latlng;
+        try {
+          const res = await fetch(`/api/rutas/${ROUTE_ID}/summits`, {
+            method: "POST",
+            headers: _csrfHeaders(),
+            body: JSON.stringify({ lat, lon: lng, name: "" }),
+          });
+          if (!res.ok) return;
+          await _refreshSummits();
+          addSummitMode = false;
+          detailMap.getContainer().style.cursor = "";
+          // Resetear botones del control
+          const pan = detailMap.getContainer().querySelector(".mendi-ctrl-pan");
+          const pin = detailMap.getContainer().querySelector(".mendi-ctrl-pin");
+          if (pan) pan.classList.add("active");
+          if (pin) pin.classList.remove("active");
+        } catch (_) {}
+      });
     }
 
     // ============ PERFIL DE ELEVACION ============
@@ -368,12 +656,14 @@
         tooltip.style.left = px + "px";
         tooltip.style.top = py + "px";
         tooltip.classList.add("visible");
+        _showProfileCursor(s.km);
       }
 
       function hide() {
         cursor.style.display = "none";
         dot.style.display = "none";
         tooltip.classList.remove("visible");
+        _hideProfileCursor();
       }
 
       svg.addEventListener("mousemove", show);
@@ -1022,6 +1312,7 @@
     initNotes();
     initRenameModal();
     initDeleteModal();
+    initAddSummitMode();
     initThemeObserver();
   }
 

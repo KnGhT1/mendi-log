@@ -109,7 +109,7 @@
   </div>
 </section>
 
-<!-- ===== 01 · MAPA ===== -->
+<!-- ===== 01 · MAPA + PERFIL ===== -->
 <section class="section">
   <div class="section-head">
     <div class="section-title-wrap">
@@ -120,18 +120,102 @@
   </div>
 
   <div class="map-card">
-    <div class="detail-map-wrap">
-      <div id="detail-map"></div>
-      <div class="loading-overlay" id="detail-map-loading">
-        <div class="lo-inner">
-          <span>cargando trazado</span>
-          <span class="lo-dots"><span></span><span></span><span></span></span>
+    <div class="map-card-main">
+      <div class="detail-map-wrap">
+        <div id="detail-map"></div>
+        <div class="loading-overlay" id="detail-map-loading">
+          <div class="lo-inner">
+            <span>cargando trazado</span>
+            <span class="lo-dots"><span></span><span></span><span></span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Perfil integrado bajo el mapa -->
+      <div class="elev-card elev-card--inline">
+        <div class="elev-chart-wrap" id="elev-wrap">
+          <svg id="elev-svg" viewBox="0 0 800 280" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="elev-grad" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="var(--{{ data.hero.level }})" stop-opacity="0.45"/>
+                <stop offset="100%" stop-color="var(--{{ data.hero.level }})" stop-opacity="0"/>
+              </linearGradient>
+              <pattern id="elev-grid" width="80" height="56" patternUnits="userSpaceOnUse">
+                <path d="M 80 0 L 0 0 0 56" fill="none" stroke="var(--border)" stroke-width="0.5" stroke-opacity="0.7"/>
+              </pattern>
+            </defs>
+            <rect width="800" height="280" fill="url(#elev-grid)"/>
+            <g class="elev-axis-label">
+              {% set y_positions = [36, 98, 160, 222, 266] %}
+              {% for label in data.elev.axis.y %}
+              <text x="8" y="{{ y_positions[loop.index0] }}">{{ label }}</text>
+              {% endfor %}
+            </g>
+            <g class="elev-axis-label">
+              {% set x_positions = [0, 200, 400, 600, 780] %}
+              {% for label in data.elev.axis.x %}
+              <text x="{{ x_positions[loop.index0] }}" y="276"{% if loop.last %} text-anchor="end"{% endif %}>{{ label }}</text>
+              {% endfor %}
+            </g>
+            <path id="elev-area" d="{{ data.elev.area }}" fill="url(#elev-grad)"/>
+            <path id="elev-line" d="{{ data.elev.line }}" fill="none" stroke="var(--{{ data.hero.level }})" stroke-width="1.6" stroke-opacity="0.95"/>
+            <g id="summit-marks">
+              {% for sm in data.elev.summits %}
+              <g class="summit-mark" data-summit-id="{{ sm.summit_id }}" transform="translate({{ '%.0f' | format(sm.x) }}, {{ '%.0f' | format(sm.y) }})">
+                <line x1="0" y1="0" x2="0" y2="14" stroke="var(--accent-warm)" stroke-width="1" stroke-dasharray="2 2"/>
+                <circle cx="0" cy="0" r="4" fill="var(--accent-warm)" stroke="var(--bg)" stroke-width="2"/>
+                <text x="6" y="-4" font-family="IBM Plex Mono" font-size="10" fill="var(--accent-warm)" letter-spacing="0.05em" transform="rotate(45, 6, -4)">▲ {{ sm.name }} · {{ sm.alt_str }} m</text>
+              </g>
+              {% else %}
+              <g id="summit-mark" transform="translate({{ '%.0f' | format(data.elev.summit_x) }}, {{ '%.0f' | format(data.elev.summit_y) }})">
+                <line x1="0" y1="0" x2="0" y2="14" stroke="var(--accent-warm)" stroke-width="1" stroke-dasharray="2 2"/>
+                <circle cx="0" cy="0" r="4" fill="var(--accent-warm)" stroke="var(--bg)" stroke-width="2"/>
+                <text x="6" y="-4" font-family="IBM Plex Mono" font-size="10" fill="var(--accent-warm)" letter-spacing="0.05em" transform="rotate(45, 6, -4)">▲ cima · {{ data.elev.summit_alt_str }} m</text>
+              </g>
+              {% endfor %}
+            </g>
+            <line id="elev-cursor" class="elev-cursor-line" x1="0" y1="0" x2="0" y2="280" style="display:none;"/>
+            <circle id="elev-cursor-dot" class="elev-cursor-dot" r="4" cx="0" cy="0" style="display:none;"/>
+          </svg>
+          <div id="elev-tooltip" class="elev-tooltip">
+            <div class="row alt"><span class="l">altitud</span><span class="v" id="tt-alt">—</span></div>
+            <div class="row"><span class="l">distancia</span><span class="v" id="tt-dist">—</span></div>
+            <div class="row"><span class="l">tiempo</span><span class="v" id="tt-time">—</span></div>
+            <div class="row"><span class="l">pendiente</span><span class="v" id="tt-grad">—</span></div>
+          </div>
+        </div>
+
+        <div class="elev-stats-strip">
+          <div class="elev-stat up">
+            <div class="l">ascenso total</div>
+            <div class="v">{{ data.elev_strip.gain_str }}</div>
+          </div>
+          <div class="elev-stat down">
+            <div class="l">descenso total</div>
+            <div class="v">{{ data.elev_strip.loss_str }}</div>
+          </div>
+          <div class="elev-stat">
+            <div class="l">altitud mínima</div>
+            <div class="v">{{ data.elev_strip.alt_min_str }}</div>
+          </div>
+          <div class="elev-stat">
+            <div class="l">altitud máxima</div>
+            <div class="v">{{ data.elev_strip.alt_max_str }}</div>
+          </div>
+          <div class="elev-stat">
+            <div class="l">pendiente media</div>
+            <div class="v">{{ data.elev_strip.slope_avg_str }}</div>
+          </div>
+          <div class="elev-stat">
+            <div class="l">pendiente máx.</div>
+            <div class="v">{{ data.elev_strip.slope_max_str }}</div>
+          </div>
         </div>
       </div>
     </div>
+
     <aside class="map-side">
       <div class="map-side-title">Hitos del recorrido</div>
-
       {% for m in data.map.milestones %}
       <div class="marker-item">
         <div class="marker-pin {{ m.kind }}">
@@ -149,7 +233,6 @@
         </div>
       </div>
       {% endfor %}
-
       <div class="map-info-block">
         {% for row in data.map.info_rows %}
         <div class="map-info-row">
@@ -162,99 +245,11 @@
   </div>
 </section>
 
-<!-- ===== 02 · PERFIL ===== -->
+<!-- ===== 02 · DATOS TÉCNICOS ===== -->
 <section class="section">
   <div class="section-head">
     <div class="section-title-wrap">
       <div class="section-num">02</div>
-      <h2 class="section-title">Perfil de elevación</h2>
-    </div>
-    <div class="section-meta">pasa el ratón para inspeccionar cada punto</div>
-  </div>
-
-  <div class="elev-card">
-    <div class="elev-stats-strip">
-      <div class="elev-stat up">
-        <div class="l">ascenso total</div>
-        <div class="v">{{ data.elev_strip.gain_str }}</div>
-      </div>
-      <div class="elev-stat down">
-        <div class="l">descenso total</div>
-        <div class="v">{{ data.elev_strip.loss_str }}</div>
-      </div>
-      <div class="elev-stat">
-        <div class="l">altitud mínima</div>
-        <div class="v">{{ data.elev_strip.alt_min_str }}</div>
-      </div>
-      <div class="elev-stat">
-        <div class="l">altitud máxima</div>
-        <div class="v">{{ data.elev_strip.alt_max_str }}</div>
-      </div>
-      <div class="elev-stat">
-        <div class="l">pendiente media</div>
-        <div class="v">{{ data.elev_strip.slope_avg_str }}</div>
-      </div>
-      <div class="elev-stat">
-        <div class="l">pendiente máx.</div>
-        <div class="v">{{ data.elev_strip.slope_max_str }}</div>
-      </div>
-    </div>
-
-    <div class="elev-chart-wrap" id="elev-wrap">
-      <svg id="elev-svg" viewBox="0 0 800 280" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="elev-grad" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stop-color="var(--{{ data.hero.level }})" stop-opacity="0.45"/>
-            <stop offset="100%" stop-color="var(--{{ data.hero.level }})" stop-opacity="0"/>
-          </linearGradient>
-          <pattern id="elev-grid" width="80" height="56" patternUnits="userSpaceOnUse">
-            <path d="M 80 0 L 0 0 0 56" fill="none" stroke="var(--border)" stroke-width="0.5" stroke-opacity="0.7"/>
-          </pattern>
-        </defs>
-
-        <rect width="800" height="280" fill="url(#elev-grid)"/>
-
-        <g class="elev-axis-label">
-          {% set y_positions = [36, 98, 160, 222, 266] %}
-          {% for label in data.elev.axis.y %}
-          <text x="8" y="{{ y_positions[loop.index0] }}">{{ label }}</text>
-          {% endfor %}
-        </g>
-        <g class="elev-axis-label">
-          {% set x_positions = [0, 200, 400, 600, 780] %}
-          {% for label in data.elev.axis.x %}
-          <text x="{{ x_positions[loop.index0] }}" y="276"{% if loop.last %} text-anchor="end"{% endif %}>{{ label }}</text>
-          {% endfor %}
-        </g>
-
-        <path id="elev-area" d="{{ data.elev.area }}" fill="url(#elev-grad)"/>
-        <path id="elev-line" d="{{ data.elev.line }}" fill="none" stroke="var(--{{ data.hero.level }})" stroke-width="1.6" stroke-opacity="0.95"/>
-
-        <g id="summit-mark" transform="translate({{ '%.0f' | format(data.elev.summit_x) }}, {{ '%.0f' | format(data.elev.summit_y) }})">
-          <line x1="0" y1="0" x2="0" y2="14" stroke="var(--accent-warm)" stroke-width="1" stroke-dasharray="2 2"/>
-          <circle cx="0" cy="0" r="4" fill="var(--accent-warm)" stroke="var(--bg)" stroke-width="2"/>
-          <text x="6" y="-4" font-family="IBM Plex Mono" font-size="10" fill="var(--accent-warm)" letter-spacing="0.05em">▲ cima · {{ data.elev.summit_alt_str }} m</text>
-        </g>
-
-        <line id="elev-cursor" class="elev-cursor-line" x1="0" y1="0" x2="0" y2="280" style="display:none;"/>
-        <circle id="elev-cursor-dot" class="elev-cursor-dot" r="4" cx="0" cy="0" style="display:none;"/>
-      </svg>
-
-      <div id="elev-tooltip" class="elev-tooltip">
-        <div class="row alt"><span class="l">altitud</span><span class="v" id="tt-alt">—</span></div>
-        <div class="row"><span class="l">distancia</span><span class="v" id="tt-dist">—</span></div>
-        <div class="row"><span class="l">tiempo</span><span class="v" id="tt-time">—</span></div>
-        <div class="row"><span class="l">pendiente</span><span class="v" id="tt-grad">—</span></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ===== 03 · DATOS TÉCNICOS ===== -->
-<section class="section">
-  <div class="section-head">
-    <div class="section-title-wrap">
-      <div class="section-num">03</div>
       <h2 class="section-title">Datos técnicos</h2>
     </div>
     <div class="section-meta">computado a partir del GPX original</div>
@@ -337,11 +332,11 @@
   </div>
 </section>
 
-<!-- ===== 04 · CLIMA ===== -->
+<!-- ===== 03 · CLIMA ===== -->
 <section class="section" id="weather-section">
   <div class="section-head">
     <div class="section-title-wrap">
-      <div class="section-num">04</div>
+      <div class="section-num">03</div>
       <h2 class="section-title">Clima del día</h2>
     </div>
     <div class="section-meta" id="wx-meta">{{ data.weather_meta }}</div>
@@ -494,11 +489,11 @@
   </div>
 </section>
 
-<!-- ===== 05 · NOTAS ===== -->
+<!-- ===== 04 · NOTAS ===== -->
 <section class="section">
   <div class="section-head">
     <div class="section-title-wrap">
-      <div class="section-num">05</div>
+      <div class="section-num">04</div>
       <h2 class="section-title">Notas y contexto</h2>
     </div>
     <div class="section-meta">campo libre · etiquetas internas</div>
@@ -562,11 +557,11 @@
 </section>
 
 {% if data.related %}
-<!-- ===== 06 · RELACIONADAS ===== -->
+<!-- ===== 05 · RELACIONADAS ===== -->
 <section class="section">
   <div class="section-head">
     <div class="section-title-wrap">
-      <div class="section-num">06</div>
+      <div class="section-num">05</div>
       <h2 class="section-title">Rutas relacionadas</h2>
     </div>
     <div class="section-meta"><a href="/rutas">ver todas →</a></div>
@@ -648,7 +643,11 @@ window.MENDI_DETAIL = {
   notes: {
     text: {{ data.notes.text | tojson }},
     tags: {{ data.notes.tags | tojson }}
-  }
+  },
+  summits: [
+    {% for s in data.map.milestones if s.kind == 'summit' %}{% endfor %}
+  ],
+  canEdit: {{ 'true' if current_user and current_user.role in ('admin', 'user') else 'false' }}
 };
 </script>
 {# detail.js se carga globalmente desde base.html #}

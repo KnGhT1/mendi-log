@@ -60,7 +60,7 @@ from app.auth import (
 from app.db import commit as _db_commit, get_session, init_db
 from app.detail import build_detail
 from app.importer import ImportResult, process_gpx, user_gpx_dir
-from app.models import Route, TrackPoint, User
+from app.models import Route, Summit, TrackPoint, User
 from app.queries import user_route_get_or_404
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -729,6 +729,11 @@ def api_track(
     data = build_detail(db, current_user.id, route_id)
     if not data:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
+    _summit_rows = db.query(Summit).filter(Summit.route_id == route_id).all()
+    _summit_coords = {
+        s.id: {"lat": s.lat, "lon": s.lon, "elevation_m": s.elevation_m}
+        for s in _summit_rows
+    }
     return {
         "track": data.map.track.points,
         "bbox": data.map.track.bbox,
@@ -742,6 +747,15 @@ def api_track(
                 "time": m.time_str,
             }
             for m in data.map.milestones
+        ],
+        "summits": [
+            {"id": s.summit_id, "x": s.x, "y": s.y,
+             "alt_str": s.alt_str, "name": s.name,
+             "lat": _summit_coords.get(s.summit_id, {}).get("lat"),
+             "lon": _summit_coords.get(s.summit_id, {}).get("lon"),
+             "elevation_m": _summit_coords.get(s.summit_id, {}).get("elevation_m")}
+            for s in data.elev.summits
+            if s.summit_id > 0  # excluir fallbacks sin id real
         ],
         "elev_samples": data.elev.samples,
     }
@@ -971,6 +985,128 @@ def api_eliminar(
                 pass
     db.delete(r)
     _commit(db, invalidate=True)
+    return {"ok": True}
+
+
+# ===== Gestión de cimas =====
+
+class SummitCreatePayload(BaseModel):
+    lat: float
+    lon: float
+    name: Optional[str] = None
+
+    @field_validator("lat")
+    @classmethod
+    def _check_lat(cls, v: float) -> float:
+        if not -90 <= v <= 90:
+            raise ValueError("lat fuera de rango")
+        return round(v, 7)
+
+    @field_validator("lon")
+    @classmethod
+    def _check_lon(cls, v: float) -> float:
+        if not -180 <= v <= 180:
+            raise ValueError("lon fuera de rango")
+        return round(v, 7)
+
+
+class SummitUpdatePayload(BaseModel):
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    name: Optional[str] = None
+
+    @field_validator("lat")
+    @classmethod
+    def _check_lat(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and not -90 <= v <= 90:
+            raise ValueError("lat fuera de rango")
+        return round(v, 7) if v is not None else None
+
+    @field_validator("lon")
+    @classmethod
+    def _check_lon(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and not -180 <= v <= 180:
+            raise ValueError("lon fuera de rango")
+        return round(v, 7) if v is not None else None
+
+
+def _serialize_summit(s: Summit) -> dict:
+    return {
+        "id": s.id,
+        "seq": s.seq,
+        "lat": s.lat,
+        "lon": s.lon,
+        "elevation_m": s.elevation_m,
+        "name": s.name,
+        "source": s.source,
+    }
+
+
+@app.post("/api/rutas/{route_id}/summits")
+def api_summit_create(
+    route_id: int,
+    payload: SummitCreatePayload,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(require_writer),
+    _csrf: None = Depends(require_csrf),
+):
+    """Crea una cima manual para la ruta — acotado al usuario."""
+    r = user_route_get_or_404(db, current_user.id, route_id)
+    max_seq = db.query(func.coalesce(func.max(Summit.seq), -1)).filter(Summit.route_id == r.id).scalar()
+    s = Summit(
+        route_id=r.id,
+        seq=int(max_seq) + 1,
+        lat=payload.lat,
+        lon=payload.lon,
+        elevation_m=None,
+        name=(payload.name or "").strip() or None,
+        source="manual",
+    )
+    db.add(s)
+    db.flush()
+    _commit(db)
+    return _serialize_summit(s)
+
+
+@app.patch("/api/rutas/{route_id}/summits/{summit_id}")
+def api_summit_update(
+    route_id: int,
+    summit_id: int,
+    payload: SummitUpdatePayload,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(require_writer),
+    _csrf: None = Depends(require_csrf),
+):
+    """Mueve o renombra una cima — acotado al usuario."""
+    user_route_get_or_404(db, current_user.id, route_id)
+    s = db.query(Summit).filter(Summit.id == summit_id, Summit.route_id == route_id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="Cima no encontrada")
+    if payload.lat is not None:
+        s.lat = payload.lat
+    if payload.lon is not None:
+        s.lon = payload.lon
+    if payload.name is not None:
+        s.name = payload.name.strip() or None
+    _commit(db)
+    return _serialize_summit(s)
+
+
+@app.delete("/api/rutas/{route_id}/summits/{summit_id}")
+def api_summit_delete(
+    route_id: int,
+    summit_id: int,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(require_writer),
+    _csrf: None = Depends(require_csrf),
+):
+    """Elimina una cima — acotado al usuario."""
+    user_route_get_or_404(db, current_user.id, route_id)
+    s = db.query(Summit).filter(Summit.id == summit_id, Summit.route_id == route_id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="Cima no encontrada")
+    db.delete(s)
+    _commit(db)
     return {"ok": True}
 
 
