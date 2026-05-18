@@ -433,7 +433,6 @@ html[data-theme="light"] .marker-pin.summit { background: rgba(184,133,63,0.12);
   font-size: 11px;
   color: var(--text);
   pointer-events: none;
-  transform: translate(-50%, -100%);
   margin-top: -10px;
   box-shadow: 0 8px 24px -8px rgba(0,0,0,0.5);
   display: none;

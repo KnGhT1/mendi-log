@@ -213,11 +213,70 @@
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
 
+  // ============ Capas de mapa compartidas ============
+  const STORAGE_MAP_LAYER = "mendi.map.layer";
+
+  /**
+   * Devuelve el objeto con todas las capas base disponibles y la clave
+   * de la capa activa persistida en localStorage.
+   * Expuesto como `window.MENDI_MAP_LAYERS` para que los módulos de
+   * mapa (resumen, rutas, detalle) lo consuman sin duplicar URLs.
+   */
+  function buildMapLayers() {
+    const attr_carto = "© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> © <a href='https://carto.com/'>CartoDB</a>";
+    const attr_osm   = "© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors";
+    const attr_topo  = "© <a href='https://opentopomap.org'>OpenTopoMap</a> (<a href='https://creativecommons.org/licenses/by-sa/3.0/'>CC-BY-SA</a>)";
+    const attr_esri  = "Tiles © <a href='https://www.esri.com/'>Esri</a> &mdash; Source: Esri, USGS, NOAA";
+
+    // Crear instancias nuevas cada vez — una capa Leaflet no puede
+    // pertenecer a más de un mapa simultáneamente.
+    const layers = {
+      "CartoDB Claro":   L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",   { attribution: attr_carto, maxZoom: 19 }),
+      "CartoDB Voyager": L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { attribution: attr_carto, maxZoom: 19 }),
+      "OpenStreetMap":   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",                   { attribution: attr_osm,   maxZoom: 19 }),
+      "OpenTopoMap":     L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",                 { attribution: attr_topo,  maxZoom: 19, maxNativeZoom: 17 }),
+      "Satélite (ESRI)": L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { attribution: attr_esri, maxZoom: 19 }),
+    };
+
+    let saved = "CartoDB Claro";
+    try { saved = localStorage.getItem(STORAGE_MAP_LAYER) || saved; } catch (_) {}
+    if (!layers[saved]) saved = "CartoDB Claro";
+
+    return { layers, active: saved };
+  }
+
+  /**
+   * Añade el control de capas nativo de Leaflet al mapa dado,
+   * restaura la capa guardada y persiste los cambios en localStorage.
+   * Devuelve la instancia del control para poder destruirla en teardown.
+   * @param {L.Map} map
+   * @returns {L.Control.Layers}
+   */
+  function addLayerControl(map) {
+    const { layers, active } = buildMapLayers();
+    layers[active].addTo(map);
+
+    const ctrl = L.control.layers(layers, {}, {
+      position: "topright",
+      collapsed: true,
+    }).addTo(map);
+
+    map.on("baselayerchange", (e) => {
+      try { localStorage.setItem(STORAGE_MAP_LAYER, e.name); } catch (_) {}
+      // Notificar al resto de mapas abiertos (p.ej. mini-mapa featured)
+      document.dispatchEvent(new CustomEvent("mendi:layerchange", { detail: { name: e.name } }));
+    });
+
+    return ctrl;
+  }
+
+  window.MENDI_MAP = { buildMapLayers, addLayerControl, STORAGE_MAP_LAYER };
+
   // ============================================================
   //  Página "resumen"
   // ============================================================
   let map = null;
-  let darkTiles, lightTiles, darkLabels, lightLabels;
+  let mapLayerCtrl = null;
   let currentProfileIdx = -1;
   let rotationTimer = null;
 
@@ -272,22 +331,7 @@
       scrollWheelZoom: true,
     }).setView([42.78, -0.85], 6);
 
-    map.createPane("labelsPane").style.zIndex = "450";
-
-    darkTiles = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png", {
-      attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18
-    });
-    darkLabels = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", {
-      pane: "labelsPane", maxZoom: 18
-    });
-    lightTiles = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
-      attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18
-    });
-    lightLabels = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png", {
-      pane: "labelsPane", maxZoom: 18
-    });
-
-    updateMapTiles();
+    mapLayerCtrl = addLayerControl(map);
     requestAnimationFrame(() => { try { map && map.invalidateSize(); } catch (_) {} });
 
     // Crear el clusterGroup una sola vez; _fetchMapMarkers añade capas progresivamente
@@ -312,7 +356,7 @@
     window.MENDI_TEARDOWN.push(() => {
       try { if (map) map.remove(); } catch (_) {}
       map = null;
-      darkTiles = lightTiles = darkLabels = lightLabels = undefined;
+      mapLayerCtrl = null;
     });
 
     _fetchMapMarkers(clusterGroup);
@@ -410,28 +454,6 @@
       hideMapLoading();
     }
   }
-
-  /**
-   * Intercambia las capas de teselas del mapa resumen según el tema
-   * activo (`dark` / `light`). Expuesta como `window.updateMapTiles` para
-   * que `applyTheme` pueda llamarla desde cualquier módulo.
-   */
-  function updateMapTiles() {
-    if (!map) return;
-    const theme = document.documentElement.getAttribute("data-theme");
-    if (theme === "dark") {
-      if (map.hasLayer(lightTiles)) map.removeLayer(lightTiles);
-      if (map.hasLayer(lightLabels)) map.removeLayer(lightLabels);
-      if (!map.hasLayer(darkTiles)) darkTiles.addTo(map);
-      if (!map.hasLayer(darkLabels)) darkLabels.addTo(map);
-    } else {
-      if (map.hasLayer(darkTiles)) map.removeLayer(darkTiles);
-      if (map.hasLayer(darkLabels)) map.removeLayer(darkLabels);
-      if (!map.hasLayer(lightTiles)) lightTiles.addTo(map);
-      if (!map.hasLayer(lightLabels)) lightLabels.addTo(map);
-    }
-  }
-  window.updateMapTiles = updateMapTiles;
 
   // ============ Monthly chart ============
   /**

@@ -2419,3 +2419,32 @@ mark.search-hl {
   .users-head { display: none; }
   .users-row .cell.actions { justify-content: flex-start; }
 }
+
+/* ===== Leaflet layer control — estilos de la app ===== */
+.leaflet-control-layers {
+  background: var(--surface) !important;
+  border: 1px solid var(--border-2) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px -8px rgba(0,0,0,0.4) !important;
+  color: var(--text) !important;
+}
+.leaflet-control-layers-toggle {
+  background-color: var(--surface) !important;
+  border-radius: 7px !important;
+}
+.leaflet-control-layers-expanded {
+  padding: 8px 12px !important;
+  font-family: var(--mono) !important;
+  font-size: 11.5px !important;
+}
+.leaflet-control-layers label {
+  color: var(--text-muted) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  padding: 3px 0 !important;
+  cursor: pointer !important;
+  transition: color 0.12s !important;
+}
+.leaflet-control-layers label:hover { color: var(--text) !important; }
+.leaflet-control-layers input[type="radio"] { accent-color: var(--accent); }

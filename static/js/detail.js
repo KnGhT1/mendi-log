@@ -84,7 +84,7 @@
 
     // ============ MAPA ============
     let detailMap = null;
-    let darkTiles, lightTiles, darkLabels, lightLabels;
+    let detailMapLayerCtrl = null;
     let trackPolyline = null;
     let trackOutline = null;
     let trackPoints = [];  // copia del track para el cursor del perfil
@@ -152,28 +152,13 @@
         scrollWheelZoom: true,
       });
 
-      detailMap.createPane("labelsPane").style.zIndex = "450";
-
-      darkTiles = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png", {
-        attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18,
-      });
-      darkLabels = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", {
-        pane: "labelsPane", maxZoom: 18,
-      });
-      lightTiles = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
-        attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18,
-      });
-      lightLabels = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png", {
-        pane: "labelsPane", maxZoom: 18,
-      });
-
-      updateMapTiles();
+      detailMapLayerCtrl = window.MENDI_MAP.addLayerControl(detailMap);
       requestAnimationFrame(() => { try { detailMap && detailMap.invalidateSize(); } catch (_) {} });
 
       window.MENDI_TEARDOWN.push(() => {
         try { if (detailMap) detailMap.remove(); } catch (_) {}
         detailMap = null;
-        darkTiles = lightTiles = darkLabels = lightLabels = undefined;
+        detailMapLayerCtrl = null;
         trackPolyline = trackOutline = null;
         trackPoints = []; trackCumKm = [];
         profileCursorMarker = null;
@@ -316,20 +301,7 @@
      * Intercambia las capas de teselas del mapa de detalle según el tema
      * activo (`dark` / `light`), incluyendo las capas de etiquetas.
      */
-    function updateMapTiles() {
-      if (!detailMap) return;
-      if (isLight()) {
-        if (detailMap.hasLayer(darkTiles)) detailMap.removeLayer(darkTiles);
-        if (detailMap.hasLayer(darkLabels)) detailMap.removeLayer(darkLabels);
-        if (!detailMap.hasLayer(lightTiles)) lightTiles.addTo(detailMap);
-        if (!detailMap.hasLayer(lightLabels)) lightLabels.addTo(detailMap);
-      } else {
-        if (detailMap.hasLayer(lightTiles)) detailMap.removeLayer(lightTiles);
-        if (detailMap.hasLayer(lightLabels)) detailMap.removeLayer(lightLabels);
-        if (!detailMap.hasLayer(darkTiles)) darkTiles.addTo(detailMap);
-        if (!detailMap.hasLayer(darkLabels)) darkLabels.addTo(detailMap);
-      }
-    }
+    function updateMapTiles() {}
 
     function _csrfHeaders(extra) {
       const meta = document.querySelector('meta[name="csrf-token"]');
@@ -653,8 +625,14 @@
         const wrapRect = wrap.getBoundingClientRect();
         const px = (s.x / 800) * rect.width + (rect.left - wrapRect.left);
         const py = (s.y / 280) * rect.height + (rect.top - wrapRect.top);
+        // Mostrar arriba si hay espacio, abajo si no
+        const tooltipH = tooltip.offsetHeight || 90;
+        const above = py - tooltipH - 10 >= 0;
         tooltip.style.left = px + "px";
-        tooltip.style.top = py + "px";
+        tooltip.style.top = above
+          ? (py - tooltipH - 10) + "px"
+          : (py + 16) + "px";
+        tooltip.style.transform = "translateX(-50%)";
         tooltip.classList.add("visible");
         _showProfileCursor(s.km);
       }

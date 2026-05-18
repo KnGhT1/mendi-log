@@ -406,29 +406,9 @@
 
     // ============ ROUTES MAP ============
     let routesMap = null;
-    let routesMapDark, routesMapLight, routesMapDarkLabels, routesMapLightLabels;
+    let routesMapLayerCtrl = null;
     let routesClusterGroup = null;
-    // Cache de items para repintar sin refetch
     let routesMapItems = [];
-
-    function _routesMapTheme() {
-      return document.documentElement.getAttribute("data-theme") || "dark";
-    }
-
-    function syncRoutesMapTiles() {
-      if (!routesMap) return;
-      if (_routesMapTheme() === "dark") {
-        if (routesMap.hasLayer(routesMapLight)) routesMap.removeLayer(routesMapLight);
-        if (routesMap.hasLayer(routesMapLightLabels)) routesMap.removeLayer(routesMapLightLabels);
-        if (!routesMap.hasLayer(routesMapDark)) routesMapDark.addTo(routesMap);
-        if (!routesMap.hasLayer(routesMapDarkLabels)) routesMapDarkLabels.addTo(routesMap);
-      } else {
-        if (routesMap.hasLayer(routesMapDark)) routesMap.removeLayer(routesMapDark);
-        if (routesMap.hasLayer(routesMapDarkLabels)) routesMap.removeLayer(routesMapDarkLabels);
-        if (!routesMap.hasLayer(routesMapLight)) routesMapLight.addTo(routesMap);
-        if (!routesMap.hasLayer(routesMapLightLabels)) routesMapLightLabels.addTo(routesMap);
-      }
-    }
 
     function _buildRoutesMapPopup(r) {
       const km = (r.km || 0).toFixed(2).replace(".", ",");
@@ -586,21 +566,13 @@
         scrollWheelZoom: true,
       }).setView([42.78, -0.85], 7);
 
-      routesMap.createPane("labelsPane").style.zIndex = "450";
-
-      routesMapDark = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png", { attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18 });
-      routesMapDarkLabels = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", { pane: "labelsPane", maxZoom: 18 });
-      routesMapLight = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", { attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18 });
-      routesMapLightLabels = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png", { pane: "labelsPane", maxZoom: 18 });
-
-      syncRoutesMapTiles();
-      // El contenedor acaba de mostrarse: invalidateSize garantiza que
-      // Leaflet recalcula dimensiones reales tras el display:none -> block
+      routesMapLayerCtrl = window.MENDI_MAP.addLayerControl(routesMap);
       setTimeout(() => { try { routesMap && routesMap.invalidateSize(); } catch (_) {} }, 0);
 
       window.MENDI_TEARDOWN.push(() => {
         try { if (routesMap) routesMap.remove(); } catch (_) {}
-        routesMap = routesMapDark = routesMapLight = routesMapDarkLabels = routesMapLightLabels = null;
+        routesMap = null;
+        routesMapLayerCtrl = null;
         routesClusterGroup = null;
         routesMapItems = [];
       });
@@ -1237,7 +1209,6 @@
       for (const m of mutations) {
         if (m.attributeName === "data-theme") {
           syncFeaturedTiles();
-          syncRoutesMapTiles();
         }
       }
     });
