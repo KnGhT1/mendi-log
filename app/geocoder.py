@@ -34,11 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.db import DATA_DIR, SessionLocal, commit as _db_commit
 from app.models import GeocodeCache
-from app.text_utils import (
-    canonical_geo,
-    normalize as _normalize,  # noqa: F401  (alias preservado por compatibilidad)
-    strip_accents as _strip_accents,  # noqa: F401
-)
+from app.text_utils import canonical_geo
 
 logger = logging.getLogger(__name__)
 
