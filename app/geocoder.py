@@ -71,48 +71,20 @@ def _cache_key(lat: float, lon: float) -> str:
     return f"{lat:.2f},{lon:.2f}"
 
 
-_PROVINCE_TO_REGION = {
-    "navarra": "navarra",
-    "nafarroa": "navarra",
-    "vizcaya": "vizcaya",
-    "bizkaia": "vizcaya",
-    "guipuzcoa": "guipuzcoa",
-    "gipuzkoa": "guipuzcoa",
-    "alava": "alava",
-    "araba": "alava",
-    "la rioja": "la rioja",
-    "rioja": "la rioja",
-    "cantabria": "cantabria",
-    "asturias": "asturias",
-    "principado de asturias": "asturias",
-    "leon": "leon",
-    "huesca": "huesca",
-    "zaragoza": "zaragoza",
-    "teruel": "teruel",
-    "burgos": "burgos",
-    "palencia": "palencia",
-    "lleida": "lleida",
-    "girona": "girona",
-    "barcelona": "barcelona",
-    "tarragona": "tarragona",
-}
-
-
 def _extract_region(
     address: dict,
 ) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """Extrae (country, region, sub_region) del objeto `address` de Nominatim.
 
-    Normaliza la provincia al mapa _PROVINCE_TO_REGION y busca sub_region
-    en varios campos candidatos (county, municipality, town, etc.) tomando
-    el primero no vacío que difiera de la provincia.
+    Usa directamente el campo province/state que devuelve Nominatim
+    (con accept-language=es siempre en castellano) tras canonicalizar.
+    Busca sub_region en varios campos candidatos tomando el primero no
+    vacío que difiera de la provincia.
     """
     country = canonical_geo(address.get("country"))
 
     province = canonical_geo(address.get("province") or address.get("state"))
-    region: Optional[str] = None
-    if province:
-        region = _PROVINCE_TO_REGION.get(province, province)
+    region: Optional[str] = province or None
 
     sub_candidates = [
         address.get("county"),
