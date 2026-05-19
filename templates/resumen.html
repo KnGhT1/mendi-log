@@ -141,112 +141,6 @@ mendi.log · resumen · {{ data.hero.route_count }} ruta{{ '' if data.hero.route
     </div>
   </section>
 
-  <!-- Charts -->
-  <section class="section">
-    <div class="section-head">
-      <h2 class="section-title">Evolución y distribución</h2>
-      <div class="section-meta">últimos {{ data.monthly | length }} meses</div>
-    </div>
-
-    <div class="charts-grid">
-      <div class="chart-card">
-        <div class="chart-card-head">
-          <div class="chart-title">Kilómetros por mes</div>
-          <div class="chart-sub">cronológico</div>
-        </div>
-        <svg id="chart-monthly" viewBox="0 0 600 180" style="width:100%; height:180px;"></svg>
-      </div>
-
-      <div class="chart-card">
-        <div class="chart-card-head">
-          <div class="chart-title">Por dificultad</div>
-          <div class="chart-sub">{{ data.donut_total }} {{ 'ruta' if data.donut_total == 1 else 'rutas' }}</div>
-        </div>
-        <div class="donut-wrap">
-          {% set DASH_C = 289 %}
-          {% set RING = 289.0 %}
-          <svg viewBox="0 0 120 120" width="120" height="120">
-            <circle cx="60" cy="60" r="46" fill="none" stroke="var(--donut-track)" stroke-width="14"/>
-            {% set ns = namespace(offset=0.0) %}
-            {% for slice in data.donut %}
-              {% set arc = (slice.pct / 100.0) * RING %}
-              <circle cx="60" cy="60" r="46" fill="none"
-                      stroke="var(--{{ slice.css_class }})" stroke-width="14"
-                      stroke-dasharray="{{ '%.2f' % arc }} {{ DASH_C }}"
-                      stroke-dashoffset="-{{ '%.2f' % ns.offset }}"
-                      transform="rotate(-90 60 60)"/>
-              {% set ns.offset = ns.offset + arc %}
-            {% endfor %}
-            <text x="60" y="58" text-anchor="middle" font-family="Fraunces" font-size="22" font-weight="400" fill="currentColor" style="color: var(--text);" letter-spacing="-0.02em">{{ data.donut_total }}</text>
-            <text x="60" y="74" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" fill="currentColor" style="color: var(--text-dim);" letter-spacing="0.12em">RUTAS</text>
-          </svg>
-          <div class="donut-legend">
-            {% for slice in data.donut %}
-            <div class="donut-row" style="--c:var(--{{ slice.css_class }});">
-              <span class="l">{{ slice.label }}</span>
-              <span class="v">{{ slice.count }} · {{ slice.pct }}%</span>
-            </div>
-            {% endfor %}
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Calendar -->
-  <section class="section">
-    <div class="section-head">
-      <h2 class="section-title">Calendario de actividad</h2>
-      <div class="section-meta">{{ data.calendar | length }} {{ 'año' if data.calendar | length == 1 else 'años' }}</div>
-    </div>
-    <div style="display:grid; grid-template-columns:max-content 1fr 1fr; gap:20px; align-items:start;">
-      <div class="chart-card">
-        <div id="resumen-calendar">
-          <div style="display:flex; flex-direction:column; gap:6px;">
-            <div class="cal-heatmap">
-              <div></div>
-              {% for m in ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'] %}
-                <div class="cal-month">{{ m }}</div>
-              {% endfor %}
-            </div>
-            {% for yd in data.calendar %}
-              <div class="cal-heatmap">
-                <div class="cal-row-label">{{ yd.year }}</div>
-                {% for cell in yd.cells %}
-                  <div class="cal-cell {{ cell.level }}" title="{{ cell.month }} {{ yd.year }} · {{ cell.title }}"></div>
-                {% endfor %}
-              </div>
-            {% endfor %}
-          </div>
-        </div>
-        <div style="display:flex; justify-content:flex-end; gap:6px; margin-top:14px; align-items:center; font-family:var(--mono); font-size:10.5px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.12em;">
-          menos
-          <span class="cal-cell" style="width:11px; height:11px;"></span>
-          <span class="cal-cell lvl1" style="width:11px; height:11px;"></span>
-          <span class="cal-cell lvl2" style="width:11px; height:11px;"></span>
-          <span class="cal-cell lvl3" style="width:11px; height:11px;"></span>
-          <span class="cal-cell lvl4" style="width:11px; height:11px;"></span>
-          más
-        </div>
-      </div>
-
-      <div class="chart-card">
-          <div class="chart-card-head">
-            <div class="chart-title">Por día de semana</div>
-            <div class="chart-sub">histórico</div>
-          </div>
-          <svg id="chart-weekday" style="width:100%; height:90px; display:block;"></svg>
-        </div>
-        <div class="chart-card">
-          <div class="chart-card-head">
-            <div class="chart-title">Estacionalidad</div>
-            <div class="chart-sub">km por mes</div>
-          </div>
-          <svg id="chart-seasonality" style="width:100%; height:90px; display:block;"></svg>
-        </div>
-    </div>
-  </section>
-
   <!-- Recent routes -->
   <section class="section">
     <div class="section-head">
@@ -317,9 +211,6 @@ mendi.log · resumen · {{ data.hero.route_count }} ruta{{ '' if data.hero.route
 {% block scripts_extra %}
 <script>
   window.MENDI = {
-    kmByDay: {{ data.km_by_day | tojson }},
-    kmByWeekday: {{ data.km_by_weekday | tojson }},
-    kmByMonthHist: {{ data.km_by_month_hist | tojson }},
     months: [
       {% for p in data.monthly %}
       { m: {{ p.label | tojson }}, v: {{ p.value }} }{{ "," if not loop.last }}

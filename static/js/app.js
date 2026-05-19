@@ -66,8 +66,6 @@
     // Refresca elementos dependientes del tema si están presentes
     if (typeof window.updateMapTiles === "function") window.updateMapTiles();
     if (typeof window.renderMonthlyChart === "function") window.renderMonthlyChart();
-    if (typeof window.renderWeekdayChart === "function") window.renderWeekdayChart();
-    if (typeof window.renderSeasonalityChart === "function") window.renderSeasonalityChart();
     document.dispatchEvent(new CustomEvent("mendi:themechange", { detail: { theme } }));
   }
   window.applyTheme = applyTheme;
@@ -530,94 +528,6 @@
   }
   window.renderMonthlyChart = renderMonthlyChart;
 
-  // ============ Weekday chart ============
-  /**
-   * Renderiza el gráfico SVG de kilómetros por día de la semana
-   * (`#chart-weekday`). Resalta el día con más actividad en
-   * `--accent-warm`. Los datos vienen de `window.MENDI.kmByWeekday`.
-   * Expuesta como `window.renderWeekdayChart`.
-   */
-  function renderWeekdayChart() {
-    const svg = document.getElementById("chart-weekday");
-    if (!svg) return;
-    const data = (window.MENDI || {}).kmByWeekday || [];
-    if (!data.length) { svg.innerHTML = ""; return; }
-
-    const W = svg.getBoundingClientRect().width || 300;
-    const H = 90;
-    const PAD_T = 14, PAD_B = 18, PAD_X = 4;
-    const innerW = W - PAD_X * 2;
-    const innerH = H - PAD_T - PAD_B;
-    const labels = ["L", "M", "X", "J", "V", "S", "D"];
-    const maxV = Math.max(...data, 1);
-    const slotW = innerW / data.length;
-    const barW = Math.max(4, slotW * 0.6);
-    const cAccent = cssVar("--accent");
-    const cWarm = cssVar("--accent-warm");
-    const cDim = cssVar("--text-dim");
-    const cText = cssVar("--text");
-
-    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-    let html = "";
-    data.forEach((v, i) => {
-      const cx = PAD_X + slotW * i + slotW / 2;
-      const barH = Math.max(2, (v / maxV) * innerH);
-      const y = PAD_T + innerH - barH;
-      const isMax = v === maxV;
-      const color = isMax ? cWarm : cAccent;
-      html += `<rect x="${(cx - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="${color}" fill-opacity="${isMax ? 0.9 : 0.55}"/>`;
-      html += `<text x="${cx.toFixed(1)}" y="${H - 4}" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" fill="${cDim}">${labels[i]}</text>`;
-      if (v > 0) html += `<text x="${cx.toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle" font-family="IBM Plex Mono" font-size="7.5" fill="${isMax ? cWarm : cText}">${v}</text>`;
-    });
-    svg.innerHTML = html;
-  }
-
-  // ============ Seasonality chart ============
-  /**
-   * Renderiza el gráfico SVG de estacionalidad mensual histórica
-   * (`#chart-seasonality`). Muestra la distribución de km por mes
-   * calendario (todos los años). Los datos vienen de
-   * `window.MENDI.kmByMonthHist`. Expuesta como
-   * `window.renderSeasonalityChart`.
-   */
-  function renderSeasonalityChart() {
-    const svg = document.getElementById("chart-seasonality");
-    if (!svg) return;
-    const data = (window.MENDI || {}).kmByMonthHist || [];
-    if (!data.length) { svg.innerHTML = ""; return; }
-
-    const W = svg.getBoundingClientRect().width || 300;
-    const H = 90;
-    const PAD_T = 14, PAD_B = 18, PAD_X = 4;
-    const innerW = W - PAD_X * 2;
-    const innerH = H - PAD_T - PAD_B;
-    const labels = ["E","F","M","A","M","J","J","A","S","O","N","D"];
-    const maxV = Math.max(...data, 1);
-    const slotW = innerW / data.length;
-    const barW = Math.max(4, slotW * 0.6);
-    const cCool = cssVar("--accent-cool");
-    const cWarm = cssVar("--accent-warm");
-    const cDim = cssVar("--text-dim");
-    const cText = cssVar("--text");
-
-    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-    let html = "";
-    data.forEach((v, i) => {
-      const cx = PAD_X + slotW * i + slotW / 2;
-      const barH = Math.max(2, (v / maxV) * innerH);
-      const y = PAD_T + innerH - barH;
-      const isMax = v === maxV;
-      const color = isMax ? cWarm : cCool;
-      html += `<rect x="${(cx - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="${color}" fill-opacity="${isMax ? 0.9 : 0.55}"/>`;
-      html += `<text x="${cx.toFixed(1)}" y="${H - 4}" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" fill="${cDim}">${labels[i]}</text>`;
-      if (isMax) html += `<text x="${cx.toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle" font-family="IBM Plex Mono" font-size="7.5" fill="${cWarm}">${v}</text>`;
-    });
-    svg.innerHTML = html;
-  }
-
-  window.renderWeekdayChart = renderWeekdayChart;
-  window.renderSeasonalityChart = renderSeasonalityChart;
-
   // ============ Rotación de silueta hero ============
   /**
    * Muestra la silueta de elevación del hero correspondiente al índice
@@ -819,66 +729,6 @@
     });
   }
 
-  // ============ Calendario heatmap resumen (reagrupado por día local) ============
-  /**
-   * Renderiza el heatmap de calendario de la vista Resumen
-   * (`#resumen-calendar`). Reagrupa los km del servidor (días UTC) a días
-   * locales del navegador antes de pintar, mostrando los 3 años más
-   * recientes con datos. Los niveles de color se calculan por km mensual.
-   */
-  function renderResumenCalendar() {
-    const wrap = document.getElementById("resumen-calendar");
-    if (!wrap) return;
-    const MENDI = window.MENDI || {};
-    const kmByDay = MENDI.kmByDay || [];
-    if (!kmByDay.length) return;
-
-    const { fmtDateLocal, localDateKey } = window.MENDI_UTIL || {};
-    if (!localDateKey) return;
-
-    // Reagrupar por día local
-    const byLocal = {};
-    kmByDay.forEach(({ iso, km }) => {
-      const key = localDateKey(iso + "T12:00:00Z");
-      byLocal[key] = (byLocal[key] || 0) + km;
-    });
-
-    // Años con datos (máx 3 más recientes)
-    const years = [...new Set(Object.keys(byLocal).map(k => parseInt(k.slice(0, 4))))]
-      .sort((a, b) => a - b).slice(-3);
-
-    const MONTH_ES = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
-
-    // Construir HTML igual que el SSR pero con días locales
-    let calHtml = '<div style="display:flex; flex-direction:column; gap:6px;">';
-    calHtml += '<div class="cal-heatmap"><div></div>';
-    MONTH_ES.forEach(m => { calHtml += `<div class="cal-month">${m}</div>`; });
-    calHtml += '</div>';
-
-    years.forEach(year => {
-      calHtml += '<div class="cal-heatmap">';
-      calHtml += `<div class="cal-row-label">${year}</div>`;
-      for (let m = 1; m <= 12; m++) {
-        const key = `${year}-${String(m).padStart(2,"0")}`;
-        const v = Object.keys(byLocal)
-          .filter(k => k.startsWith(key))
-          .reduce((s, k) => s + byLocal[k], 0);
-        let level = "";
-        if (v > 14) level = "lvl4";
-        else if (v > 12) level = "lvl3";
-        else if (v > 8)  level = "lvl2";
-        else if (v > 0)  level = "lvl1";
-        const title = v > 0
-          ? `${MONTH_ES[m-1]} ${year} · ${v.toFixed(2).replace(".",",")} km`
-          : "sin actividad";
-        calHtml += `<div class="cal-cell ${level}" title="${escapeHtml(title)}"></div>`;
-      }
-      calHtml += '</div>';
-    });
-    calHtml += '</div>';
-    wrap.innerHTML = calHtml;
-  }
-
   // ============ Registro de páginas ============
   window.MENDI_PAGES.resumen = {
     init() {
@@ -888,9 +738,6 @@
       applyTheme(saved);
       initMap();
       renderMonthlyChart();
-      renderWeekdayChart();
-      renderSeasonalityChart();
-      renderResumenCalendar();
       initRotation();
       initInlineEdit();
       // Convertir fechas de la tabla a hora local del navegador

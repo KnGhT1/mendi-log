@@ -994,6 +994,82 @@
   }
 
   // ============================================================
+  //  02-F · POR DÍA DE SEMANA
+  // ============================================================
+  function renderWeekdayChart() {
+    const svg = document.getElementById("ana-chart-weekday");
+    if (!svg || !payload || !payload.kmByWeekday) return;
+    const data = payload.kmByWeekday;
+    if (!data.length) { svg.innerHTML = ""; return; }
+
+    const W = Math.max(svg.getBoundingClientRect().width || 0, svg.parentElement ? svg.parentElement.getBoundingClientRect().width || 0 : 0) || 300;
+    const H = 90;
+    const PAD_T = 14, PAD_B = 18, PAD_X = 4;
+    const innerW = W - PAD_X * 2;
+    const innerH = H - PAD_T - PAD_B;
+    const labels = ["L", "M", "X", "J", "V", "S", "D"];
+    const maxV = Math.max(...data, 1);
+    const slotW = innerW / data.length;
+    const barW = Math.max(4, slotW * 0.6);
+    const cAccent = cssVar("--accent");
+    const cWarm = cssVar("--accent-warm");
+    const cDim = cssVar("--text-dim");
+    const cText = cssVar("--text");
+
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    let html = "";
+    data.forEach((v, i) => {
+      const cx = PAD_X + slotW * i + slotW / 2;
+      const barH = Math.max(2, (v / maxV) * innerH);
+      const y = PAD_T + innerH - barH;
+      const isMax = v === maxV;
+      const color = isMax ? cWarm : cAccent;
+      html += `<rect x="${(cx - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="${color}" fill-opacity="${isMax ? 0.9 : 0.55}"/>`;
+      html += `<text x="${cx.toFixed(1)}" y="${H - 4}" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" fill="${cDim}">${labels[i]}</text>`;
+      if (v > 0) html += `<text x="${cx.toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle" font-family="IBM Plex Mono" font-size="7.5" fill="${isMax ? cWarm : cText}">${v}</text>`;
+    });
+    svg.innerHTML = html;
+  }
+
+  // ============================================================
+  //  02-H · ESTACIONALIDAD
+  // ============================================================
+  function renderSeasonalityChart() {
+    const svg = document.getElementById("ana-chart-seasonality");
+    if (!svg || !payload || !payload.kmByMonthHist) return;
+    const data = payload.kmByMonthHist;
+    if (!data.length) { svg.innerHTML = ""; return; }
+
+    const W = Math.max(svg.getBoundingClientRect().width || 0, svg.parentElement ? svg.parentElement.getBoundingClientRect().width || 0 : 0) || 300;
+    const H = 90;
+    const PAD_T = 14, PAD_B = 18, PAD_X = 4;
+    const innerW = W - PAD_X * 2;
+    const innerH = H - PAD_T - PAD_B;
+    const labels = ["E","F","M","A","M","J","J","A","S","O","N","D"];
+    const maxV = Math.max(...data, 1);
+    const slotW = innerW / data.length;
+    const barW = Math.max(4, slotW * 0.6);
+    const cCool = cssVar("--accent-cool");
+    const cWarm = cssVar("--accent-warm");
+    const cDim = cssVar("--text-dim");
+    const cText = cssVar("--text");
+
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    let html = "";
+    data.forEach((v, i) => {
+      const cx = PAD_X + slotW * i + slotW / 2;
+      const barH = Math.max(2, (v / maxV) * innerH);
+      const y = PAD_T + innerH - barH;
+      const isMax = v === maxV;
+      const color = isMax ? cWarm : cCool;
+      html += `<rect x="${(cx - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="${color}" fill-opacity="${isMax ? 0.9 : 0.55}"/>`;
+      html += `<text x="${cx.toFixed(1)}" y="${H - 4}" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" fill="${cDim}">${labels[i]}</text>`;
+      if (isMax) html += `<text x="${cx.toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle" font-family="IBM Plex Mono" font-size="7.5" fill="${cWarm}">${v}</text>`;
+    });
+    svg.innerHTML = html;
+  }
+
+  // ============================================================
   //  Reaccion al cambio de tema (re-tinta charts, mapa)
   // ============================================================
   /**
@@ -1012,6 +1088,10 @@
       renderScatter();
     }
     renderComparator();
+    requestAnimationFrame(() => {
+      renderWeekdayChart();
+      renderSeasonalityChart();
+    });
   }
 
   // ============================================================
@@ -1043,6 +1123,10 @@
       renderDonut("ana-donut-dist", payload.donutDistance);
       renderScatter();
       renderCalendar();
+      requestAnimationFrame(() => {
+        renderWeekdayChart();
+        renderSeasonalityChart();
+      });
       setupCombo("A");
       setupCombo("B");
       autoSelectComparator();
