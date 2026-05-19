@@ -90,20 +90,6 @@ class HeroProfile:
 
 
 @dataclass
-class DonutSlice:
-    label: str
-    count: int
-    pct: int
-    css_class: str  # moderate | hard | very-hard | easy
-
-
-@dataclass
-class CalendarYear:
-    year: int
-    cells: List[Dict]  # [{"month": "ene", "level": "lvl3", "title": "12,3 km"}]
-
-
-@dataclass
 class MonthlyPoint:
     label: str
     value: float
@@ -193,12 +179,6 @@ class ResumenData:
     kpis: List[KpiCard]
     map_markers: List[MapMarker]
     monthly: List[MonthlyPoint]
-    donut: List[DonutSlice]
-    donut_total: int
-    calendar: List[CalendarYear]
-    km_by_day: List[Dict]          # [{"iso": "YYYY-MM-DD", "km": float}] UTC
-    km_by_weekday: List[float]     # [lun, mar, mie, jue, vie, sab, dom]
-    km_by_month_hist: List[float]  # [ene, feb, ..., dic] histórico total
     recent_routes: List[RouteRow]
     hero_profiles: List[HeroProfile]
     longest_route_name: Optional[str] = None
@@ -240,12 +220,6 @@ def _empty_resumen() -> ResumenData:
         ],
         map_markers=[],
         monthly=[],
-        donut=[],
-        donut_total=0,
-        calendar=[],
-        km_by_day=[],
-        km_by_weekday=[0.0] * 7,
-        km_by_month_hist=[0.0] * 12,
         recent_routes=[],
         hero_profiles=[],
     )
@@ -254,8 +228,7 @@ def _empty_resumen() -> ResumenData:
 def build_resumen(db: Session, user_id: int) -> ResumenData:
     """Construye todas las agregaciones de la vista Resumen acotadas al usuario.
 
-    Calcula hero stats, KPIs, marcadores del mapa, gráfica mensual, donut
-    de dificultad, calendario heatmap y tabla de rutas recientes.
+    Calcula hero stats, KPIs, marcadores del mapa, gráfica mensual y tabla de rutas recientes.
     Minimiza la transferencia desde SQLite usando proyecciones parciales
     y GROUP BY en lugar de hidratar el modelo Route completo.
     """
@@ -415,71 +388,6 @@ def build_resumen(db: Session, user_id: int) -> ResumenData:
         label = f"{MONTH_LABELS_ES[m-1]} {str(y)[2:]}"
         monthly.append(MonthlyPoint(label=label, value=round(km_by_ym.get((y, m), 0.0), 2)))
 
-    # km por día UTC + por día de la semana + por mes del año en una sola pasada
-    # sobre light_rows (el cliente reagrupa por día local en su zona horaria).
-    km_by_day_raw: dict[date, float] = defaultdict(float)
-    km_by_weekday = [0.0] * 7
-    km_by_month_hist = [0.0] * 12
-    for r in light_rows:
-        d = r.started_at.date()
-        km_by_day_raw[d] += r.distance_km
-        km_by_weekday[r.started_at.weekday()] += r.distance_km
-        km_by_month_hist[r.started_at.month - 1] += r.distance_km
-    km_by_day = [
-        {"iso": d.isoformat(), "km": round(v, 2)}
-        for d, v in km_by_day_raw.items()
-    ]
-    km_by_weekday = [round(v, 1) for v in km_by_weekday]
-    km_by_month_hist = [round(v, 1) for v in km_by_month_hist]
-
-    # ----- Donut por dificultad ----- (GROUP BY en SQL — evita cargar la tabla)
-    diff_rows = (
-        db.query(Route.difficulty_level, func.count(Route.id))
-        .filter(Route.user_id == user_id)
-        .group_by(Route.difficulty_level)
-        .all()
-    )
-    counter = Counter({lvl: int(cnt) for lvl, cnt in diff_rows})
-    donut_total = sum(counter.values())
-    label_map = {
-        "easy": "Fácil", "moderate": "Moderada",
-        "hard": "Difícil", "very-hard": "Muy difícil",
-    }
-    donut = []
-    for level in ("easy", "moderate", "hard", "very-hard"):
-        c = counter.get(level, 0)
-        if c == 0:
-            continue
-        pct = int(round((c / donut_total) * 100))
-        donut.append(DonutSlice(
-            label=label_map[level], count=c, pct=pct, css_class=level,
-        ))
-
-    # ----- Calendario heatmap: muestra los anos con datos (max 3 mas recientes) -----
-    years_present = sorted({y for (y, _m) in km_by_ym.keys()}, reverse=True)[:3]
-    years_present.sort()
-    calendar: List[CalendarYear] = []
-    for year in years_present:
-        cells = []
-        for m in range(1, 13):
-            v = km_by_ym.get((year, m), 0)
-            level = ""
-            if v > 14:
-                level = "lvl4"
-            elif v > 12:
-                level = "lvl3"
-            elif v > 8:
-                level = "lvl2"
-            elif v > 0:
-                level = "lvl1"
-            title = f"{_fmt_km(v)} km" if v > 0 else "sin actividad"
-            cells.append({
-                "month": MONTH_LABELS_ES[m - 1],
-                "level": level,
-                "title": title,
-            })
-        calendar.append(CalendarYear(year=year, cells=cells))
-
     # ----- Tabla ultimas rutas (max 8) ----- query acotada con LIMIT 8.
     recent_rows = (
         db.query(Route)
@@ -534,12 +442,6 @@ def build_resumen(db: Session, user_id: int) -> ResumenData:
         kpis=kpis,
         map_markers=map_markers,
         monthly=monthly,
-        donut=donut,
-        donut_total=donut_total,
-        calendar=calendar,
-        km_by_day=km_by_day,
-        km_by_weekday=km_by_weekday,
-        km_by_month_hist=km_by_month_hist,
         recent_routes=recent_routes,
         hero_profiles=hero_profiles,
         longest_route_name=longest.name,

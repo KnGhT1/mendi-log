@@ -228,6 +228,8 @@ class AnalisisData:
     records: List[RecordCard]
     calendar: List[CalendarYear]
     km_by_day: List[Dict]          # [{"iso": "YYYY-MM-DD", "km": float}] UTC
+    km_by_weekday: List[float]     # [lun, mar, mie, jue, vie, sab, dom]
+    km_by_month_hist: List[float]  # [ene, feb, ..., dic] historico total
     comparator_routes: List[ComparatorRoute]
     total_sessions: int
     total_unique_routes: int
@@ -412,6 +414,8 @@ def _empty_analisis(range_key: str) -> AnalisisData:
         records=[],
         calendar=[],
         km_by_day=[],
+        km_by_weekday=[0.0] * 7,
+        km_by_month_hist=[0.0] * 12,
         comparator_routes=[],
         total_sessions=0, total_unique_routes=0,
     )
@@ -952,6 +956,17 @@ def build_analisis(
     for y in sorted(months_for_year.keys(), reverse=True):
         calendar.append(CalendarYear(year=y, months=months_for_year[y]))
 
+    # ----- km por dia de semana y estacionalidad (historico global del usuario) -----
+    all_routes_user = db.query(Route).filter(Route.user_id == user_id).all()
+    km_by_weekday = [0.0] * 7
+    km_by_month_hist = [0.0] * 12
+    for r in all_routes_user:
+        if r.started_at:
+            km_by_weekday[r.started_at.weekday()] += r.distance_km
+            km_by_month_hist[r.started_at.month - 1] += r.distance_km
+    km_by_weekday = [round(v, 1) for v in km_by_weekday]
+    km_by_month_hist = [round(v, 1) for v in km_by_month_hist]
+
     # ----- 08 · COMPARADOR (todas las rutas únicas, una entrada por clave) -----
     comparator_routes: List[ComparatorRoute] = []
     for k, lst in by_key.items():
@@ -1005,6 +1020,8 @@ def build_analisis(
         records=records,
         calendar=calendar,
         km_by_day=km_by_day_payload,
+        km_by_weekday=km_by_weekday,
+        km_by_month_hist=km_by_month_hist,
         comparator_routes=comparator_routes,
         total_sessions=total_sessions,
         total_unique_routes=unique_count,
@@ -1082,6 +1099,8 @@ def to_json_payload(data: AnalisisData) -> Dict:
         "scatterMaxKm": data.scatter_max_km,
         "scatterMaxGain": data.scatter_max_gain,
         "kmByDay": data.km_by_day,
+        "kmByWeekday": data.km_by_weekday,
+        "kmByMonthHist": data.km_by_month_hist,
         "comparator": [
             {"key": c.key, "name": c.name, "origin": c.origin,
              "km": c.km, "refKm": c.ref_km,
