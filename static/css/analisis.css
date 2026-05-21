@@ -21,7 +21,137 @@
   --heat-cell-4: rgba(228, 120, 98, 0.95);
 }
 
-/* ===================== EMPTY ===================== */
+/* ===================== CALENDARIO MENSUAL MINI (hero analisis) ===================== */
+.ana-stat-cal { justify-content: flex-start; }
+.ana-cal-mini {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ana-cal-mini-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ana-cal-mini-head,
+.ana-cal-mini-row {
+  display: grid;
+  grid-template-columns: 32px repeat(12, 14px);
+  gap: 2px;
+  align-items: center;
+}
+.ana-cal-mini-mlbl {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  text-align: center;
+  text-transform: lowercase;
+  opacity: .7;
+}
+.ana-cal-mini-ylbl {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  opacity: .7;
+}
+.ana-cal-mini .ana-cal-cell {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  cursor: default;
+  transition: transform .1s;
+}
+.ana-cal-mini .ana-cal-cell:hover { transform: scale(1.3); z-index: 2; }
+.ana-cal-mini .ana-cal-cell.lvl1 { background: var(--heat-cell-1); }
+.ana-cal-mini .ana-cal-cell.lvl2 { background: var(--heat-cell-2); }
+.ana-cal-mini .ana-cal-cell.lvl3 { background: var(--heat-cell-3); }
+.ana-cal-mini .ana-cal-cell.lvl4 { background: var(--heat-cell-4); }
+.ana-cal-mini-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  opacity: .7;
+}
+.ana-cal-mini-legend .ana-cal-cell {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ===================== NAV DE SECCIONES STICKY ===================== */
+.ana-section-nav {
+  position: sticky;
+  top: 61px; /* justo bajo el topbar (14px padding + 32px btn + 14px + 1px border) */
+  z-index: 9;
+  display: flex;
+  gap: 2px;
+  padding: 0 40px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+@media (max-width: 900px) { .ana-section-nav { padding: 0 20px; top: 57px; } }
+.ana-section-nav::-webkit-scrollbar { display: none; }
+.ana-snav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  text-decoration: none;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  transition: color .15s, border-color .15s;
+  margin-bottom: -1px;
+}
+.ana-snav-link:hover { color: var(--text); border-bottom-color: var(--border); }
+.ana-snav-link.is-active { color: var(--accent); border-bottom-color: var(--accent); }
+.ana-snav-num {
+  color: var(--accent);
+  font-size: 10px;
+  opacity: .7;
+}
+
+/* ===================== EVOLUCIÓN EN HERO ===================== */
+.ana-evo-card-hero {
+  margin-top: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 18px;
+  position: relative;
+  z-index: 1;
+}
+.ana-evo-legend-meta {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  opacity: .7;
+}
+
+/* ===================== TOP-10 CON SCROLL ===================== */
+.ana-top10-wrap {
+  max-height: 350px;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.ana-top10-wrap::-webkit-scrollbar { width: 6px; }
+.ana-top10-wrap::-webkit-scrollbar-track { background: transparent; }
+.ana-top10-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+
 .ana-empty {
   display: flex; align-items: center; justify-content: center;
   min-height: 60vh;
@@ -208,15 +338,16 @@
   grid-template-rows: auto auto;
   gap: 18px;
 }
-.ana-card-ratio  { grid-column: 1; grid-row: 1; }
-.ana-card-streak { grid-column: 2; grid-row: 1; }
-.ana-card-disc   { grid-column: 3; grid-row: 1; }
-.ana-card-top    { grid-column: 1 / span 2; grid-row: 2; }
-.ana-card-dorm   { grid-column: 3; grid-row: 2; }
+.ana-card-ratio      { grid-column: 1; grid-row: 1; }
+.ana-card-streak     { grid-column: 2; grid-row: 1; }
+.ana-card-disc       { grid-column: 3; grid-row: 1; }
+.ana-card-top        { grid-column: 1 / span 2; grid-row: 2 / span 2; }
+.ana-card-weekday    { grid-column: 3; grid-row: 2; }
+.ana-card-seasonality{ grid-column: 3; grid-row: 3; }
 @media (max-width: 980px) {
   .ana-patterns { grid-template-columns: 1fr; }
   .ana-card-ratio, .ana-card-streak, .ana-card-disc,
-  .ana-card-top, .ana-card-dorm {
+  .ana-card-top, .ana-card-weekday, .ana-card-seasonality {
     grid-column: 1; grid-row: auto;
   }
 }
@@ -273,18 +404,20 @@
 }
 
 /* C · top10 */
-.ana-top10 {
-  list-style: none; margin: 0; padding: 0; display: grid; gap: 14px;
-}
 .ana-top-row {
-  display: grid; gap: 10px;
+  display: grid; gap: 8px;
   padding: 12px 0; border-bottom: 1px dashed var(--border);
 }
 .ana-top-row:last-child { border-bottom: none; }
 .ana-top-head {
-  display: grid; grid-template-columns: 32px 1fr auto;
-  gap: 12px; align-items: center;
+  display: grid; grid-template-columns: 32px 120px 1fr auto;
+  gap: 10px; align-items: center;
 }
+.ana-top-elev {
+  height: 40px; border-radius: 6px; overflow: hidden;
+  background: var(--surface-2, rgba(255,255,255,0.03));
+}
+.ana-top-elev-svg { width: 100%; height: 100%; display: block; }
 .ana-top-rank {
   font-family: var(--font-mono); font-size: 14px;
   color: var(--text-dim); text-align: center;
@@ -303,6 +436,14 @@
 .ana-top-reps-wrap {
   text-align: right;
 }
+.ana-top-trend {
+  display: block;
+  font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+  line-height: 1;
+}
+.ana-top-trend-up   { color: var(--accent, #B5D17A); }
+.ana-top-trend-down { color: var(--danger, #E47862); }
+.ana-top-trend-flat { color: var(--text-dim); }
 .ana-top-reps {
   font-family: var(--font-serif); font-size: 24px; color: var(--accent);
   display: block; line-height: 1;
@@ -341,6 +482,8 @@
   color: var(--accent); font-size: 13px;
 }
 .ana-top-stat-when { color: var(--text-dim); margin-left: auto; }
+.ana-top-stat-when.is-cool { color: var(--accent-warm, #E8B86D); }
+.ana-top-stat-when.is-cold { color: var(--danger, #E47862); }
 .ana-top-level {
   padding: 1px 8px; border-radius: 999px;
   border: 1px solid var(--border);
@@ -351,23 +494,6 @@
 .ana-top-level-hard      { color: var(--hard,      #E8B86D); border-color: rgba(232, 184, 109, 0.4); }
 .ana-top-level-very-hard { color: var(--very-hard, #E47862); border-color: rgba(228, 120, 98, 0.4); }
 
-/* E · dormidas */
-.ana-dorm { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.ana-dorm li {
-  padding: 10px 0; border-bottom: 1px dashed var(--border);
-}
-.ana-dorm li:last-child { border-bottom: none; }
-.ana-dorm-name { font-size: 13px; }
-.ana-dorm-meta {
-  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
-  margin-top: 2px;
-}
-.ana-dorm-foot {
-  margin-top: 4px; font-family: var(--font-mono); font-size: 11px;
-  color: var(--text-dim);
-}
-.ana-dorm-foot strong { color: var(--accent-warm, #E8B86D); font-size: 13px; }
-
 /* ===================== 03 · EVOLUCIÓN ===================== */
 .ana-evo-card {
   background: var(--surface); border: 1px solid var(--border);
@@ -376,36 +502,87 @@
 .ana-evo-legend {
   display: flex; gap: 18px; margin-bottom: 14px;
   font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+  align-items: center;
 }
 .ana-evo-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .ana-evo-dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
-.ana-evo-sessions { background: var(--accent); }
-.ana-evo-unique   { background: var(--accent-cool, #7DAFC9); }
-.ana-evo {
-  display: grid; grid-template-columns: repeat(14, 1fr);
-  gap: 6px; align-items: end; height: 200px;
+.ana-evo-sessions { background: var(--accent-warm); }
+.ana-evo-prev     { background: var(--accent-cool, #7DAFC9); opacity: .6; }
+.ana-evo-legend-meta { margin-left: auto; color: var(--text-dim); font-size: 10px; }
+.ana-evo-chart-wrap { position: relative; }
+.ana-evo-svg { width: 100%; height: 180px; display: block; overflow: visible; }
+.ana-evo-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(0,0,0,.25);
+  z-index: 10;
 }
-.ana-evo-col {
-  display: grid; grid-template-rows: 1fr auto;
-  gap: 6px; height: 100%; cursor: default;
+.ana-evo-tooltip-label { color: var(--accent); font-size: 10px; margin-bottom: 4px; }
+.ana-evo-tooltip-row { display: flex; gap: 10px; justify-content: space-between; }
+.ana-evo-tooltip-val { color: var(--text); }
+.ana-evo-tooltip-prev { color: var(--text-dim); }
+
+/* ===================== 04 · DISTRIBUCIÓN + SCATTER ===================== */
+.ana-dist-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr;
+  grid-template-rows: auto auto;
+  gap: 18px;
+  align-items: start;
 }
-.ana-evo-bars {
-  display: flex; gap: 3px; align-items: end; height: 100%;
-  justify-content: center;
+.ana-dist-row .ana-donut-card:nth-child(1) { grid-column: 1; grid-row: 1; }
+.ana-dist-row .ana-donut-card:nth-child(2) { grid-column: 2; grid-row: 1; }
+.ana-dist-row .ana-card-kpi-spark          { grid-column: 1 / span 2; grid-row: 2; }
+.ana-dist-row .ana-scatter-card            { grid-column: 3; grid-row: 1 / span 2; }
+@media (max-width: 1100px) {
+  .ana-dist-row {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto auto;
+  }
+  .ana-dist-row .ana-scatter-card { grid-column: 1 / -1; grid-row: 3; }
+  .ana-dist-row .ana-card-kpi-spark { grid-column: 1 / -1; grid-row: 2; }
 }
-.ana-evo-bar { flex: 1; min-height: 2px; border-radius: 2px 2px 0 0; max-width: 14px; }
-.ana-evo-bar-sessions { background: var(--accent); }
-.ana-evo-bar-unique   { background: var(--accent-cool, #7DAFC9); opacity: .85; }
-.ana-evo-lbl {
-  font-family: var(--font-mono); font-size: 9px; color: var(--text-dim);
-  text-align: center; white-space: nowrap;
+@media (max-width: 700px) {
+  .ana-dist-row { grid-template-columns: 1fr; }
+  .ana-dist-row .ana-donut-card:nth-child(1),
+  .ana-dist-row .ana-donut-card:nth-child(2),
+  .ana-dist-row .ana-card-kpi-spark,
+  .ana-dist-row .ana-scatter-card { grid-column: 1; grid-row: auto; }
+}
+.ana-dist-row .ana-scatter-card { padding: 18px; }
+.ana-dist-row .ana-scatter-card h3 {
+  margin: 0 0 10px;
+  font-family: var(--serif); font-weight: 400; font-size: 18px;
 }
 
-/* ===================== 04 · DONUTS ===================== */
-.ana-donuts {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+/* KPI sparkline km/sesión */
+.ana-card-kpi-spark {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-@media (max-width: 900px) { .ana-donuts { grid-template-columns: 1fr; } }
+.ana-kpi-spark-svg {
+  width: 100%;
+  height: 70px;
+  display: block;
+}
+.ana-kpi-spark-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.ana-kpi-spark-foot #ana-kpi-spark-trend.up   { color: var(--accent); }
+.ana-kpi-spark-foot #ana-kpi-spark-trend.down { color: var(--danger, #E47862); }
 .ana-donut-card {}
 .ana-donut-row {
   display: grid; grid-template-columns: 140px 1fr; gap: 18px; align-items: center;
@@ -436,7 +613,7 @@
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 14px; padding: 18px;
 }
-.ana-scatter { width: 100%; height: 360px; display: block; overflow: hidden; }
+.ana-scatter { width: 100%; height: 380px; display: block; overflow: hidden; }
 .ana-scatter-legend {
   display: flex; gap: 18px; margin-top: 12px;
   font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);

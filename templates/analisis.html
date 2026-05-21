@@ -24,7 +24,7 @@
 {% else %}
 
 {# ============================================================
-   HERO · resumen + chips de rango
+   HERO · resumen + chips de rango + evolución mensual
 ============================================================ #}
 <section class="page-head">
   <div class="page-head-grid"></div>
@@ -62,6 +62,41 @@
   </div>
 
   <div class="ana-hero-stats" id="ana-hero-stats">
+    {% if data.calendar_mini %}
+    <div class="ana-stat ana-stat-cal">
+      <div class="ana-stat-label">actividad</div>
+      <div class="ana-cal-mini">
+        <div class="ana-cal-mini-grid">
+          <div class="ana-cal-mini-head">
+            <div></div>
+            {% for m in ['e','f','m','a','m','j','j','a','s','o','n','d'] %}
+            <div class="ana-cal-mini-mlbl">{{ m }}</div>
+            {% endfor %}
+          </div>
+          {% for cy in data.calendar_mini %}
+          <div class="ana-cal-mini-row">
+            <div class="ana-cal-mini-ylbl">{{ cy.year }}</div>
+            {% for cm in cy.months %}
+            <div class="ana-cal-cell {{ cm.weeks[0].level }}" title="{{ cm.weeks[0].title }}"></div>
+            {% endfor %}
+            {% for _ in range(12 - cy.months|length) %}
+            <div class="ana-cal-cell"></div>
+            {% endfor %}
+          </div>
+          {% endfor %}
+        </div>
+        <div class="ana-cal-mini-legend">
+          <span>menos</span>
+          <span class="ana-cal-cell"></span>
+          <span class="ana-cal-cell lvl1"></span>
+          <span class="ana-cal-cell lvl2"></span>
+          <span class="ana-cal-cell lvl3"></span>
+          <span class="ana-cal-cell lvl4"></span>
+          <span>más km</span>
+        </div>
+      </div>
+    </div>
+    {% endif %}
     {% for s in data.hero_stats %}
     <div class="ana-stat">
       <div class="ana-stat-label">{{ s.label }}</div>
@@ -70,12 +105,24 @@
     </div>
     {% endfor %}
   </div>
+
 </section>
+
+{# Nav de secciones sticky #}
+<nav class="ana-section-nav" id="ana-section-nav" aria-label="Secciones">
+  <a href="#ana-s01" class="ana-snav-link"><span class="ana-snav-num">01</span> Mapa</a>
+  <a href="#ana-s02" class="ana-snav-link"><span class="ana-snav-num">02</span> Patrones</a>
+  <a href="#ana-s03" class="ana-snav-link"><span class="ana-snav-num">03</span> Evolución</a>
+  <a href="#ana-s04" class="ana-snav-link"><span class="ana-snav-num">04</span> Distribución</a>
+  <a href="#ana-s05" class="ana-snav-link"><span class="ana-snav-num">05</span> Récords</a>
+  <a href="#ana-s06" class="ana-snav-link"><span class="ana-snav-num">06</span> Calendario</a>
+  <a href="#ana-s07" class="ana-snav-link"><span class="ana-snav-num">07</span> Comparador</a>
+</nav>
 
 {# ============================================================
    01 · MAPA DE CALOR + ZONAS
 ============================================================ #}
-<section class="section">
+<section class="section" id="ana-s01">
   <div class="section-head">
     <div class="section-title-wrap">
       <div class="section-num">01</div>
@@ -108,9 +155,9 @@
 </section>
 
 {# ============================================================
-   02 · PATRONES (5 mini-tarjetas)
+   02 · PATRONES
 ============================================================ #}
-<section class="section">
+<section class="section" id="ana-s02">
   <div class="section-head">
     <div class="section-title-wrap">
       <div class="section-num">02</div>
@@ -166,57 +213,61 @@
     <article class="ana-card ana-card-top">
       <div class="ana-card-eyebrow">C · ranking</div>
       <h3>tus rutas más repetidas</h3>
-      <ol class="ana-top10" id="ana-top10">
-        {% for t in data.top_routes %}
-        <li class="ana-top-row">
-          <div class="ana-top-head">
-            <span class="ana-top-rank">{{ "%02d"|format(t.rank) }}</span>
-            <div class="ana-top-id">
-              <div class="ana-top-name">{{ t.name }}</div>
-              <div class="ana-top-meta">{{ t.origin }} · desde {{ t.first_year }}</div>
+      <div class="ana-top10-wrap">
+        <ol class="ana-top10" id="ana-top10">
+          {% for t in data.top_routes %}
+          <li class="ana-top-row">
+            <div class="ana-top-head">
+              <span class="ana-top-rank">{{ "%02d"|format(t.rank) }}</span>
+              <div class="ana-top-elev">
+                {% if t.elev_line %}
+                <svg viewBox="0 0 800 200" preserveAspectRatio="none" class="ana-top-elev-svg">
+                  <defs>
+                    <linearGradient id="top-grad-{{ t.rank }}" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="0%" stop-color="var(--{{ t.level }})" stop-opacity="0.35"/>
+                      <stop offset="100%" stop-color="var(--{{ t.level }})" stop-opacity="0"/>
+                    </linearGradient>
+                  </defs>
+                  {% if t.elev_area %}<path d="{{ t.elev_area }}" fill="url(#top-grad-{{ t.rank }})"/>{% endif %}
+                  <path d="{{ t.elev_line }}" fill="none" stroke="var(--{{ t.level }})" stroke-width="1.5" stroke-opacity="0.9"/>
+                </svg>
+                {% endif %}
+              </div>
+              <div class="ana-top-id">
+                <div class="ana-top-name">{{ t.name }}</div>
+                <div class="ana-top-meta">{{ t.origin }} · desde {{ t.first_year }}</div>
+              </div>
+              <div class="ana-top-reps-wrap">
+                <span class="ana-top-trend ana-top-trend-{{ t.trend }}" title="tendencia vs año anterior">{% if t.trend == 'up' %}↑{% elif t.trend == 'down' %}↓{% else %}→{% endif %}</span>
+                <span class="ana-top-reps">×{{ t.reps }}</span>
+                <span class="ana-top-reps-cap">repeticiones</span>
+              </div>
             </div>
-            <div class="ana-top-reps-wrap">
-              <span class="ana-top-reps">×{{ t.reps }}</span>
-              <span class="ana-top-reps-cap">repeticiones</span>
+            <div class="ana-top-bar"><span style="width:{{ t.bar_pct }}%"></span></div>
+            <div class="ana-top-stats">
+              <span class="ana-top-stat" title="distancia acumulada en todas las repeticiones">
+                <i class="ana-top-stat-ico">Σ</i>{{ t.total_km }}<em>km</em>
+              </span>
+              <span class="ana-top-stat" title="desnivel + medio por sesión">
+                ↑ {{ t.avg_gain }}<em>m</em>
+              </span>
+              <span class="ana-top-stat" title="tiempo medio en movimiento">
+                ⏱ {{ t.duration_avg }}
+              </span>
+              <span class="ana-top-stat ana-top-level ana-top-level-{{ t.level }}" title="dificultad media">
+                {{ t.level_label }} · {{ t.score }}
+              </span>
+              <span class="ana-top-stat ana-top-stat-when {% if t.days_since > 365 %}is-cold{% elif t.days_since > 180 %}is-cool{% endif %}" title="última vez que la pisaste">
+                hace {{ t.days_since }} d · {{ t.last_date_str }}
+              </span>
             </div>
-          </div>
-          <div class="ana-top-bar"><span style="width:{{ t.bar_pct }}%"></span></div>
-          <div class="ana-top-stats">
-            <span class="ana-top-stat" title="distancia acumulada en todas las repeticiones">
-              <i class="ana-top-stat-ico">Σ</i>{{ t.total_km }}<em>km</em>
-            </span>
-            <span class="ana-top-stat" title="desnivel + medio por sesión">
-              ↑ {{ t.avg_gain }}<em>m</em>
-            </span>
-            <span class="ana-top-stat" title="tiempo medio en movimiento">
-              ⏱ {{ t.duration_avg }}
-            </span>
-            <span class="ana-top-stat ana-top-level ana-top-level-{{ t.level }}" title="dificultad media">
-              {{ t.level_label }} · {{ t.score }}
-            </span>
-            <span class="ana-top-stat ana-top-stat-when" title="última vez que la pisaste">
-              hace {{ t.days_since }} d · {{ t.last_date_str }}
-            </span>
-          </div>
-        </li>
-        {% endfor %}
-      </ol>
+          </li>
+          {% endfor %}
+        </ol>
+      </div>
     </article>
 
-    {# E · dormidas #}
-    <article class="ana-card ana-card-dorm">
-      <div class="ana-card-eyebrow">E · dormidas</div>
-      <h3>te están esperando</h3>
-      <ul class="ana-dorm" id="ana-dorm">
-        {% for d in data.dormidas %}
-        <li>
-          <div class="ana-dorm-name">{{ d.name }}</div>
-          <div class="ana-dorm-meta">{{ d.origin }} · {{ d.distance_km }} km</div>
-          <div class="ana-dorm-foot"><strong>{{ d.days_since }}</strong> días · última: {{ d.last_date_str }}</div>
-        </li>
-        {% endfor %}
-      </ul>
-    </article>
+    {# E · dormidas eliminado #}
 
     {# F · por día de semana #}
     <article class="ana-card ana-card-weekday">
@@ -239,47 +290,41 @@
 {# ============================================================
    03 · EVOLUCIÓN MENSUAL
 ============================================================ #}
-<section class="section">
+<section class="section" id="ana-s03">
   <div class="section-head">
     <div class="section-title-wrap">
       <div class="section-num">03</div>
       <h2 class="section-title">Evolución mensual</h2>
     </div>
-    <div class="section-meta">sesiones vs rutas únicas · últimos 14 meses</div>
+    <div class="section-meta">km por mes · enero–diciembre · todos los años</div>
   </div>
 
   <div class="ana-evo-card">
     <div class="ana-evo-legend">
-      <span><i class="ana-evo-dot ana-evo-sessions"></i> sesiones</span>
-      <span><i class="ana-evo-dot ana-evo-unique"></i> rutas únicas</span>
+      <span><i class="ana-evo-dot ana-evo-sessions"></i> {{ data.monthly[0].label[:3] if data.monthly else '' }} año actual</span>
+      <span><i class="ana-evo-dot ana-evo-prev"></i> años anteriores</span>
+      <span class="ana-evo-legend-meta" id="ana-evo-hover-info"></span>
     </div>
-    <div class="ana-evo" id="ana-evo">
-      {% for m in data.monthly %}
-      <div class="ana-evo-col" title="{{ m.label }} · {{ m.sessions }} sesiones · {{ m.unique_routes }} únicas">
-        <div class="ana-evo-bars">
-          <span class="ana-evo-bar ana-evo-bar-sessions" style="height:{{ m.sessions_h }}%"></span>
-          <span class="ana-evo-bar ana-evo-bar-unique"   style="height:{{ m.unique_h }}%"></span>
-        </div>
-        <div class="ana-evo-lbl">{{ m.label }}</div>
-      </div>
-      {% endfor %}
+    <div class="ana-evo-chart-wrap">
+      <svg id="ana-evo-svg" class="ana-evo-svg" preserveAspectRatio="none"></svg>
+      <div id="ana-evo-tooltip" class="ana-evo-tooltip" hidden></div>
     </div>
   </div>
 </section>
 
 {# ============================================================
-   04 · DISTRIBUCIÓN (dos donuts: dificultad y distancia)
+   04 · DISTRIBUCIÓN + SCATTER
 ============================================================ #}
-<section class="section">
+<section class="section" id="ana-s04">
   <div class="section-head">
     <div class="section-title-wrap">
       <div class="section-num">04</div>
-      <h2 class="section-title">Distribución</h2>
+      <h2 class="section-title">Distribución y dispersión</h2>
     </div>
-    <div class="section-meta">cómo se reparten tus salidas</div>
+    <div class="section-meta">dificultad · distancia · km vs desnivel</div>
   </div>
 
-  <div class="ana-donuts">
+  <div class="ana-dist-row">
     <article class="ana-card ana-donut-card">
       <h3>por dificultad</h3>
       <div class="ana-donut-row">
@@ -315,39 +360,38 @@
       </div>
       <div class="ana-donut-foot">total · {{ data.donut_distance_total }} sesiones</div>
     </article>
+
+    {# KPI: km/sesión por mes (sparkline de tendencia) #}
+    <article class="ana-card ana-card-kpi-spark">
+      <div class="ana-card-eyebrow">km / sesión</div>
+      <h3>exigencia por salida</h3>
+      <svg id="ana-kpi-spark" class="ana-kpi-spark-svg"></svg>
+      <div class="ana-kpi-spark-foot">
+        <span id="ana-kpi-spark-avg"></span>
+        <span id="ana-kpi-spark-trend"></span>
+      </div>
+    </article>
+
+    <article class="ana-card ana-scatter-card">
+      <h3>km vs desnivel</h3>
+      <svg id="ana-scatter" viewBox="0 0 800 360" class="ana-scatter"></svg>
+      <div class="ana-scatter-legend">
+        <span><i class="ana-dot ana-dot-easy"></i> fácil</span>
+        <span><i class="ana-dot ana-dot-moderate"></i> moderada</span>
+        <span><i class="ana-dot ana-dot-hard"></i> difícil</span>
+        <span><i class="ana-dot ana-dot-very-hard"></i> muy difícil</span>
+      </div>
+    </article>
   </div>
 </section>
 
 {# ============================================================
-   05 · SCATTER · km vs desnivel +
+   05 · RECORDS
 ============================================================ #}
-<section class="section">
+<section class="section" id="ana-s05">
   <div class="section-head">
     <div class="section-title-wrap">
       <div class="section-num">05</div>
-      <h2 class="section-title">Kilómetros vs Desnivel</h2>
-    </div>
-    <div class="section-meta">cada punto es una sesión, color = dificultad</div>
-  </div>
-
-  <div class="ana-scatter-card">
-    <svg id="ana-scatter" viewBox="0 0 800 360" class="ana-scatter"></svg>
-    <div class="ana-scatter-legend">
-      <span><i class="ana-dot ana-dot-easy"></i> fácil</span>
-      <span><i class="ana-dot ana-dot-moderate"></i> moderada</span>
-      <span><i class="ana-dot ana-dot-hard"></i> difícil</span>
-      <span><i class="ana-dot ana-dot-very-hard"></i> muy difícil</span>
-    </div>
-  </div>
-</section>
-
-{# ============================================================
-   06 · RECORDS
-============================================================ #}
-<section class="section">
-  <div class="section-head">
-    <div class="section-title-wrap">
-      <div class="section-num">06</div>
       <h2 class="section-title">Récords Personales</h2>
     </div>
     <div class="section-meta">los extremos de tu archivo</div>
@@ -365,12 +409,12 @@
 </section>
 
 {# ============================================================
-   07 · CALENDARIO HEATMAP
+   06 · CALENDARIO HEATMAP
 ============================================================ #}
-<section class="section">
+<section class="section" id="ana-s06">
   <div class="section-head">
     <div class="section-title-wrap">
-      <div class="section-num">07</div>
+      <div class="section-num">06</div>
       <h2 class="section-title">Calendario</h2>
     </div>
     <div class="section-meta">actividad diaria · color por kilómetros</div>
@@ -413,12 +457,12 @@
 </section>
 
 {# ============================================================
-   08 · COMPARADOR
+   07 · COMPARADOR
 ============================================================ #}
-<section class="section">
+<section class="section" id="ana-s07">
   <div class="section-head">
     <div class="section-title-wrap">
-      <div class="section-num">08</div>
+      <div class="section-num">07</div>
       <h2 class="section-title">Comparador</h2>
     </div>
     <div class="section-meta">elige dos rutas únicas y enfréntalas</div>
