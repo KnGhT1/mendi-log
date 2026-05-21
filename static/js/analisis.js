@@ -162,6 +162,8 @@
    * @param {string} url
    */
   function navigate(url) {
+    // Guardar posición de scroll antes de navegar para restaurarla tras el swap
+    const scrollY = window.scrollY;
     if (window.htmx && typeof window.htmx.ajax === "function") {
       window.htmx.ajax("GET", url, {
         target: "#hx-root",
@@ -169,6 +171,12 @@
         swap: "outerHTML",
       });
       window.history.pushState({}, "", url);
+      // Restaurar scroll tras el swap
+      const restore = () => {
+        window.scrollTo({ top: scrollY, behavior: "instant" });
+        document.body.removeEventListener("htmx:afterSwap", restore);
+      };
+      document.body.addEventListener("htmx:afterSwap", restore);
     } else {
       window.location.href = url;
     }
@@ -427,7 +435,7 @@
    * descendente por año, con niveles de color por km diario.
    */
   function renderCalendar() {
-    const wrap = document.getElementById("ana-calendar-wrap");
+    const wrap = document.getElementById("ana-calendar");
     if (!wrap || !payload || !payload.kmByDay) return;
 
     const { fmtDateLocal, localDateKey } = window.MENDI_UTIL || {};
@@ -676,7 +684,7 @@
         if (!q) return true;
         return it.name.toLowerCase().includes(q) ||
                (it.origin || "").toLowerCase().includes(q);
-      }).slice(0, 30);
+      });
       if (!filtered.length) {
         list.innerHTML = `<div class="ana-combo-empty">sin resultados</div>`;
         return;
@@ -684,7 +692,7 @@
       list.innerHTML = filtered.map((it, i) =>
         `<button type="button" class="ana-combo-item ${i === activeIdx ? 'is-active' : ''}" data-key="${escapeHtml(it.key)}">
            <div>${highlight(it.name, q)}</div>
-           <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;opacity:.7">${escapeHtml(it.origin)} · ${it.km} km</div>
+           <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;opacity:.7">${escapeHtml(it.origin)} · ${it.km} km${it.date ? ` · ${it.date}` : ""}</div>
          </button>`
       ).join("");
     }
@@ -994,8 +1002,201 @@
   }
 
   // ============================================================
-  //  02-F · POR DÍA DE SEMANA
+  //  04 · KPI SPARKLINE km/sesión por mes
   // ============================================================
+  function renderKpiSpark() {
+    const svg = document.getElementById("ana-kpi-spark");
+    const elAvg = document.getElementById("ana-kpi-spark-avg");
+    const elTrend = document.getElementById("ana-kpi-spark-trend");
+    if (!svg || !payload || !payload.monthly) return;
+    const months = payload.monthly.filter(m => m.sessions > 0);
+    if (!months.length) return;
+    const vals = months.map(m => m.km / m.sessions);
+    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const maxV = Math.max(...vals) * 1.1 || 1;
+    const W = svg.clientWidth || 300;
+    const H = 70;
+    const padX = 6, padT = 8, padB = 18;
+    const innerW = W - padX * 2;
+    const innerH = H - padT - padB;
+    const accent  = cssVar("--accent") || "#B5D17A";
+    const textDim = cssVar("--text-dim") || "#888";
+    const border  = cssVar("--border") || "#333";
+    const xOf = i => padX + (i / Math.max(vals.length - 1, 1)) * innerW;
+    const yOf = v => padT + innerH - (v / maxV) * innerH;
+    let html = "";
+    // línea de media
+    html += `<line x1="${padX}" x2="${W - padX}" y1="${yOf(avg)}" y2="${yOf(avg)}"
+      stroke="${border}" stroke-width="1" stroke-dasharray="3 3" opacity="0.7"/>`;
+    // área
+    const areaPts = `${xOf(0)},${padT + innerH} ` +
+      vals.map((v, i) => `${xOf(i)},${yOf(v)}`).join(" ") +
+      ` ${xOf(vals.length - 1)},${padT + innerH}`;
+    html += `<defs><linearGradient id="kpi-grad" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="${accent}" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="${accent}" stop-opacity="0"/>
+    </linearGradient></defs>`;
+    html += `<polygon points="${areaPts}" fill="url(#kpi-grad)"/>`;
+    // línea
+    html += `<polyline points="${vals.map((v, i) => `${xOf(i)},${yOf(v)}`).join(" ")}" fill="none" stroke="${accent}" stroke-width="1.8" stroke-linejoin="round"/>`;
+    // puntos y etiquetas
+    vals.forEach((v, i) => {
+      html += `<circle cx="${xOf(i)}" cy="${yOf(v)}" r="2.5" fill="${accent}"/>`;
+      html += `<text x="${xOf(i)}" y="${H - 4}" text-anchor="middle"
+        font-family="var(--font-mono)" font-size="8" fill="${textDim}">${months[i].label}</text>`;
+    });
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.innerHTML = html;
+    if (elAvg) elAvg.textContent = `media ${fmtKm(avg)} km/sal`;
+    if (elTrend && vals.length >= 6) {
+      const recent = vals.slice(-3).reduce((a, b) => a + b, 0) / 3;
+      const older  = vals.slice(-6, -3).reduce((a, b) => a + b, 0) / 3;
+      const diff = recent - older;
+      if (Math.abs(diff) < 0.3) {
+        elTrend.textContent = "→ estable"; elTrend.className = "";
+      } else if (diff > 0) {
+        elTrend.textContent = `↑ +${fmtKm(diff)} km`; elTrend.className = "up";
+      } else {
+        elTrend.textContent = `↓ ${fmtKm(diff)} km`; elTrend.className = "down";
+      }
+    }
+  }
+
+  //  03 · EVOLUCIÓN MENSUAL (km actual vs año anterior)
+  // ============================================================
+  function renderEvoChart() {
+    const svg = document.getElementById("ana-evo-svg");
+    const tooltip = document.getElementById("ana-evo-tooltip");
+    const hoverInfo = document.getElementById("ana-evo-hover-info");
+    if (!svg || !payload || !payload.monthly) return;
+
+    const data = payload.monthly;          // [{label, km, sessions, unique}, ...]
+    const prevYears = payload.monthlyPrevYear || {};  // {"2023": [km,...], "2024": [km,...], ...}
+    const W = svg.clientWidth || 700;
+    const H = 180;
+    const padL = 36, padR = 12, padT = 16, padB = 24;
+    const innerW = W - padL - padR;
+    const innerH = H - padT - padB;
+
+    const prevEntries = Object.entries(prevYears).sort((a, b) => +a[0] - +b[0]); // orden cronológico
+    const allKm = [
+      ...data.map(d => d.km),
+      ...prevEntries.flatMap(([, vals]) => vals),
+    ].filter(v => v > 0);
+    const maxKm = allKm.length ? Math.max(...allKm) * 1.1 : 1;
+
+    const accent   = cssVar("--accent-warm") || "#E8B86D";  // año actual destacado
+    const accentHist = cssVar("--accent-cool") || "#7DAFC9"; // años históricos
+    const textDim  = cssVar("--text-dim") || "#888";
+    const border   = cssVar("--border")   || "#333";
+    const surface2 = cssVar("--surface-2") || "rgba(255,255,255,0.04)";
+
+    const xOf = i => padL + (i / (data.length - 1)) * innerW;
+    const yOf = v => padT + innerH - (v / maxKm) * innerH;
+
+    // grid lines
+    const ticks = 4;
+    let html = "";
+    for (let i = 0; i <= ticks; i++) {
+      const v = (maxKm / ticks) * i;
+      const y = yOf(v);
+      html += `<line x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}"
+        stroke="${border}" stroke-width="1" stroke-dasharray="3 4" opacity="0.5"/>`;
+      html += `<text x="${padL - 4}" y="${y + 4}" text-anchor="end"
+        font-family="var(--font-mono)" font-size="9" fill="${textDim}">${Math.round(v)}</text>`;
+    }
+
+    // líneas de años históricos: opacidad decreciente hacia el pasado
+    if (prevEntries.length) {
+      const n = prevEntries.length;
+      prevEntries.forEach(([yr, vals], idx) => {
+        // el más reciente (idx = n-1) tiene opacidad 0.75, el más antiguo 0.35
+        const opacity = 0.35 + (idx / Math.max(n - 1, 1)) * 0.40;
+        const pts = data.map((_, i) => `${xOf(i)},${yOf(vals[i] || 0)}`).join(" ");
+        const areaPts = `${padL},${yOf(0)} ` + data.map((_, i) => `${xOf(i)},${yOf(vals[i] || 0)}`).join(" ") + ` ${xOf(data.length - 1)},${yOf(0)}`;
+        html += `<polygon points="${areaPts}" fill="${accentHist}" opacity="${(opacity * 0.25).toFixed(2)}"/>`;
+        html += `<polyline points="${pts}" fill="none" stroke="${accentHist}" stroke-width="1.5"
+          opacity="${opacity.toFixed(2)}" stroke-dasharray="4 3"/>`;
+        // etiqueta del año al final de la línea
+        const lastVal = vals[data.length - 1] || 0;
+        if (lastVal > 0) {
+          html += `<text x="${xOf(data.length - 1) + 4}" y="${yOf(lastVal) + 3}"
+            font-family="var(--font-mono)" font-size="8" fill="${accentHist}" opacity="${opacity.toFixed(2)}">${yr}</text>`;
+        }
+      });
+    }
+
+    // área año actual (accent-warm, destacado)
+    const areaAct = `${padL},${yOf(0)} ` + data.map((d, i) => `${xOf(i)},${yOf(d.km)}`).join(" ") + ` ${xOf(data.length - 1)},${yOf(0)}`;
+    html += `<defs><linearGradient id="evo-grad" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="${accent}" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="${accent}" stop-opacity="0.03"/>
+    </linearGradient></defs>`;
+    html += `<polygon points="${areaAct}" fill="url(#evo-grad)"/>`;
+    const lineAct = data.map((d, i) => `${xOf(i)},${yOf(d.km)}`).join(" ");
+    html += `<polyline points="${lineAct}" fill="none" stroke="${accent}" stroke-width="2.5" stroke-linejoin="round"/>`;
+
+    // puntos interactivos + etiquetas eje X (todos los meses, eje fijo)
+    data.forEach((d, i) => {
+      const x = xOf(i), y = yOf(d.km);
+      html += `<text x="${x}" y="${H - 4}" text-anchor="middle"
+        font-family="var(--font-mono)" font-size="9" fill="${textDim}">${d.label}</text>`;
+      html += `<circle cx="${x}" cy="${y}" r="14" fill="transparent" class="evo-hit" data-i="${i}"/>`;
+      html += `<circle cx="${x}" cy="${y}" r="${d.km > 0 ? 3.5 : 0}" fill="${accent}" class="evo-dot" data-i="${i}"/>`;
+    });
+
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.innerHTML = html;
+
+    // hover
+    svg.querySelectorAll(".evo-hit").forEach(el => {
+      el.addEventListener("mouseenter", e => {
+        const i = +el.dataset.i;
+        const d = data[i];
+        const dot = svg.querySelector(`.evo-dot[data-i="${i}"]`);
+        if (dot) dot.setAttribute("r", "5");
+        const rect = svg.getBoundingClientRect();
+        const wrap = svg.parentElement;
+        const wRect = wrap.getBoundingClientRect();
+        const cx = xOf(i), cy = yOf(d.km);
+        const scaleX = rect.width / W;
+        const tx = cx * scaleX + (rect.left - wRect.left);
+        const ty = cy * (rect.height / H) + (rect.top - wRect.top);
+        // filas de años históricos (del más reciente al más antiguo)
+        const histRows = prevEntries.slice().reverse().map(([yr, vals]) => {
+          const v = vals[i] || 0;
+          return `<div class="ana-evo-tooltip-row">
+            <span>${yr}</span>
+            <span class="ana-evo-tooltip-prev">${fmtKm(v)} km</span>
+          </div>`;
+        }).join("");
+        const prevRecent = prevEntries.length ? (prevEntries[prevEntries.length - 1][1][i] || 0) : null;
+        tooltip.innerHTML = `
+          <div class="ana-evo-tooltip-label">${d.label}</div>
+          <div class="ana-evo-tooltip-row">
+            <span>este período</span>
+            <span class="ana-evo-tooltip-val">${fmtKm(d.km)} km · ${d.sessions} sal${d.sessions === 1 ? '' : 's'}</span>
+          </div>
+          ${histRows}
+          ${d.km > 0 && prevRecent > 0 ? `<div class="ana-evo-tooltip-row">
+            <span>vs año ant.</span>
+            <span class="ana-evo-tooltip-val" style="color:${d.km >= prevRecent ? accent : '#E47862'}">${d.km >= prevRecent ? '+' : ''}${fmtKm(d.km - prevRecent)} km</span>
+          </div>` : ''}`;
+        tooltip.style.left = `${Math.min(tx + 10, wRect.width - 180)}px`;
+        tooltip.style.top  = `${Math.max(ty - 60, 0)}px`;
+        tooltip.hidden = false;
+        if (hoverInfo) hoverInfo.textContent = `${d.label} · ${fmtKm(d.km)} km`;
+      });
+      el.addEventListener("mouseleave", e => {
+        const i = +el.dataset.i;
+        const dot = svg.querySelector(`.evo-dot[data-i="${i}"]`);
+        if (dot) dot.setAttribute("r", data[i].km > 0 ? "3" : "0");
+        tooltip.hidden = true;
+        if (hoverInfo) hoverInfo.textContent = "";
+      });
+    });
+  }
+
   function renderWeekdayChart() {
     const svg = document.getElementById("ana-chart-weekday");
     if (!svg || !payload || !payload.kmByWeekday) return;
@@ -1070,6 +1271,32 @@
   }
 
   // ============================================================
+  //  Nav de secciones: marca el link activo al hacer scroll
+  // ============================================================
+  function initSectionNav() {
+    const nav = document.getElementById("ana-section-nav");
+    if (!nav) return;
+    const links = Array.from(nav.querySelectorAll(".ana-snav-link"));
+    const sections = links.map(l => document.querySelector(l.getAttribute("href"))).filter(Boolean);
+    if (!sections.length) return;
+
+    const navH = nav.offsetHeight;
+    function update() {
+      const scrollY = window.scrollY + navH + 8;
+      let active = sections[0];
+      for (const s of sections) {
+        if (s.offsetTop <= scrollY) active = s;
+      }
+      links.forEach(l => {
+        l.classList.toggle("is-active", l.getAttribute("href") === "#" + active.id);
+      });
+    }
+    window.addEventListener("scroll", update, { passive: true });
+    update();
+    window.MENDI_TEARDOWN.push(() => window.removeEventListener("scroll", update));
+  }
+
+  // ============================================================
   //  Reaccion al cambio de tema (re-tinta charts, mapa)
   // ============================================================
   /**
@@ -1082,9 +1309,11 @@
     renderRatioDonut();
     renderStreakSpark();
     renderDiscLine();
+    renderEvoChart();
     if (payload) {
       renderDonut("ana-donut-diff", payload.donutDifficulty);
       renderDonut("ana-donut-dist", payload.donutDistance);
+      renderKpiSpark();
       renderScatter();
     }
     renderComparator();
@@ -1119,10 +1348,11 @@
       renderRatioDonut();
       renderStreakSpark();
       renderDiscLine();
+      renderEvoChart();
       renderDonut("ana-donut-diff", payload.donutDifficulty);
       renderDonut("ana-donut-dist", payload.donutDistance);
+      renderKpiSpark();
       renderScatter();
-      renderCalendar();
       requestAnimationFrame(() => {
         renderWeekdayChart();
         renderSeasonalityChart();
@@ -1130,6 +1360,7 @@
       setupCombo("A");
       setupCombo("B");
       autoSelectComparator();
+      initSectionNav();
 
       const onTheme = () => onThemeChange();
       document.addEventListener("mendi:themechange", onTheme);

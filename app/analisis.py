@@ -40,7 +40,6 @@ from app.stats import (
 
 MIN_ROUTES_FOR_ANALYSIS = 3
 TOP_REPEATED_LIMIT = 10
-DORMIDAS_LIMIT = 6
 
 
 # ============= dataclasses =============
@@ -120,16 +119,9 @@ class TopRouteRow:
     level_label: str
     duration_avg: str      # tiempo medio en movimiento
     first_year: int        # año de la primera sesión registrada
-
-
-@dataclass
-class DormidaRow:
-    name: str
-    origin: str
-    last_date_str: str
-    last_date_iso: str   # UTC ISO para conversión TZ en cliente
-    days_since: int
-    distance_km: float
+    elev_line: str         # SVG path del perfil (viewBox 800x200)
+    elev_area: str         # SVG path del área del perfil
+    trend: str             # "up" | "down" | "flat" (vs año anterior)
 
 
 @dataclass
@@ -139,6 +131,7 @@ class MonthBar:
     unique_routes: int
     sessions_h: int   # altura en px relativa
     unique_h: int
+    km: float         # km totales del mes en el rango filtrado
 
 
 @dataclass
@@ -197,6 +190,7 @@ class ComparatorRoute:
     ele_max: int
     line: str          # SVG path "M ..." (viewBox 800x200, x∈[0,800] = [0,ref_km])
     area: str          # SVG path "M ..."
+    last_date_str: str = ""  # fecha de la última sesión
 
 
 @dataclass
@@ -215,9 +209,9 @@ class AnalisisData:
     streak: StreakInfo
     discovery: List[DiscoveryPoint]
     top_routes: List[TopRouteRow]
-    dormidas: List[DormidaRow]
     monthly: List[MonthBar]
     monthly_max: int
+    monthly_prev_year: Dict[int, List[float]]  # {año: [km mes 1..14]} para todos los años históricos
     donut_difficulty: List[DonutPart]
     donut_difficulty_total: int
     donut_distance: List[DonutPart]
@@ -227,6 +221,7 @@ class AnalisisData:
     scatter_max_gain: int
     records: List[RecordCard]
     calendar: List[CalendarYear]
+    calendar_mini: List[CalendarYear]  # histórico global por (año, mes), independiente del filtro
     km_by_day: List[Dict]          # [{"iso": "YYYY-MM-DD", "km": float}] UTC
     km_by_weekday: List[float]     # [lun, mar, mie, jue, vie, sab, dom]
     km_by_month_hist: List[float]  # [ene, feb, ..., dic] historico total
@@ -406,13 +401,15 @@ def _empty_analisis(range_key: str) -> AnalisisData:
         ratio=[],
         streak=StreakInfo(0, 0, 0.0, []),
         discovery=[],
-        top_routes=[], dormidas=[],
+        top_routes=[],
         monthly=[], monthly_max=1,
+        monthly_prev_year={},
         donut_difficulty=[], donut_difficulty_total=0,
         donut_distance=[], donut_distance_total=0,
         scatter=[], scatter_max_km=1.0, scatter_max_gain=1,
         records=[],
         calendar=[],
+        calendar_mini=[],
         km_by_day=[],
         km_by_weekday=[0.0] * 7,
         km_by_month_hist=[0.0] * 12,
@@ -433,7 +430,7 @@ def build_analisis(
     """Construye todas las agregaciones de la vista Análisis para el rango dado.
 
     Agrupa sesiones en rutas únicas via `route_cluster_id` materializado,
-    calcula hero stats, mapa de calor, zonas, streak, top-10, dormidas,
+    calcula hero stats, mapa de calor, zonas, streak, top-10,
     evolución mensual, donuts, scatter, récords, calendario y comparador.
     El resultado se cachea en `analisis_cache`; no llamar directamente
     desde los endpoints — usar `get_analisis_cached` en su lugar.
@@ -483,8 +480,6 @@ def build_analisis(
     most_repeated_name = max(most_repeated_routes, key=lambda r: r.started_at).name
 
     hero_stats = [
-        HeroStat("sesiones",       _fmt_int(total_sessions),
-                 "", f"{unique_count} rutas únicas"),
         HeroStat("km totales",     _fmt_km_short(total_km),
                  "km", f"media {_fmt_km_short(avg_km)} km/sesión"),
         HeroStat("desnivel +",     _fmt_int(int(total_gain)),
@@ -704,6 +699,17 @@ def build_analisis(
         avg_moving = int(round(sum((r.moving_time_s or 0) for r in lst) / n))
         last_d = max(r.started_at.date() for r in lst)
         first_d = min(r.started_at.date() for r in lst)
+        # tendencia: sesiones en los últimos 365 días vs los 365 anteriores
+        cutoff_1y = today - timedelta(days=365)
+        cutoff_2y = today - timedelta(days=730)
+        reps_last_year = sum(1 for r in lst if r.started_at.date() >= cutoff_1y)
+        reps_prev_year = sum(1 for r in lst if cutoff_2y <= r.started_at.date() < cutoff_1y)
+        if reps_last_year > reps_prev_year:
+            trend = "up"
+        elif reps_last_year < reps_prev_year:
+            trend = "down"
+        else:
+            trend = "flat"
         top_routes.append(TopRouteRow(
             rank=i,
             name=ref.name,
@@ -720,61 +726,25 @@ def build_analisis(
             level_label=_difficulty_label_es(ref.difficulty_level),
             duration_avg=_fmt_duration(avg_moving),
             first_year=first_d.year,
+            elev_line=ref.elev_line_path or "",
+            elev_area=ref.elev_area_path or "",
+            trend=trend,
         ))
 
-    # ----- E · DORMIDAS: rutas únicas con más tiempo sin pisarse -----
-    # Resolvemos la última fecha por cluster con un único GROUP BY global, no
-    # con un bucle que reclusterizaba O(n³). Luego nos quedamos solo con los
-    # clusters presentes en el rango filtrado.
-    last_date_rows = (
-        db.query(Route.route_cluster_id, func.max(Route.started_at))
-        .filter(Route.user_id == user_id)
-        .filter(Route.route_cluster_id.in_(cluster_keys))
-        .group_by(Route.route_cluster_id)
-        .all()
-        if cluster_keys else []
-    )
-    last_date_by_key: Dict[int, date] = {
-        cid: dt.date() for cid, dt in last_date_rows if dt
-    }
-    for k, lst in by_key.items():
-        if k not in last_date_by_key:
-            last_date_by_key[k] = max(r.started_at.date() for r in lst)
-    dormidas_sorted = sorted(
-        last_date_by_key.items(),
-        key=lambda kv: kv[1],
-    )[:DORMIDAS_LIMIT]
-    dormidas: List[DormidaRow] = []
-    for k, last_d in dormidas_sorted:
-        lst = by_key[k]
-        ref = max(lst, key=lambda r: r.started_at)
-        days_since = (today - last_d).days
-        dormidas.append(DormidaRow(
-            name=ref.name,
-            origin=_origin_text(ref),
-            last_date_str=_fmt_date_es(last_d),
-            last_date_iso=last_d.isoformat(),
-            days_since=days_since,
-            distance_km=round(ref.distance_km, 1),
-        ))
-
-    # ----- 03 · EVOLUCIÓN MENSUAL (sesiones vs rutas únicas, 14m) -----
-    months_14: List[Tuple[int, int]] = []
-    cur = date(today.year, today.month, 1)
-    for _ in range(14):
-        months_14.append((cur.year, cur.month))
-        if cur.month == 1:
-            cur = date(cur.year - 1, 12, 1)
-        else:
-            cur = date(cur.year, cur.month - 1, 1)
-    months_14.reverse()
+    # ----- 03 · EVOLUCIÓN MENSUAL (km por mes, enero-diciembre, año actual vs histórico) -----
+    # Eje fijo: enero a diciembre del año actual
+    months_12: List[Tuple[int, int]] = [(today.year, m) for m in range(1, 13)]
+    months_14 = months_12  # alias para compatibilidad con el resto del bloque
     sessions_per_month: Dict[Tuple[int, int], int] = defaultdict(int)
     unique_per_month: Dict[Tuple[int, int], set] = defaultdict(set)
+    km_per_month: Dict[Tuple[int, int], float] = defaultdict(float)
     for k, lst in by_key.items():
         for r in lst:
             ym = (r.started_at.year, r.started_at.month)
             sessions_per_month[ym] += 1
-            unique_per_month[ym].add(k)  # k es el índice raíz del cluster
+            unique_per_month[ym].add(k)
+            km_per_month[ym] += r.distance_km
+    monthly_max_km = max((km_per_month.get(ym, 0.0) for ym in months_14), default=1.0) or 1.0
     monthly_max = max(
         max((sessions_per_month.get(ym, 0) for ym in months_14), default=0),
         max((len(unique_per_month.get(ym, set())) for ym in months_14), default=0),
@@ -784,13 +754,18 @@ def build_analisis(
     for y, m in months_14:
         s = sessions_per_month.get((y, m), 0)
         u = len(unique_per_month.get((y, m), set()))
+        km = round(km_per_month.get((y, m), 0.0), 1)
         monthly.append(MonthBar(
-            label=f"{MONTH_LABELS_ES[m-1]} {str(y)[2:]}",
+            label=MONTH_LABELS_ES[m-1],
             sessions=s,
             unique_routes=u,
             sessions_h=int(round((s / monthly_max) * 100)),
             unique_h=int(round((u / monthly_max) * 100)),
+            km=km,
         ))
+    # año anterior: mismos 14 meses desplazados 12 meses atrás, usando histórico global
+    # (se calcula después de km_by_ym_all, ver más abajo)
+    monthly_prev_year: Dict[int, List[float]] = {}
 
     # ----- 04 · DOS DONUTS: dificultad y distancia -----
     diff_counter = Counter(r.difficulty_level for r in routes)
@@ -956,16 +931,63 @@ def build_analisis(
     for y in sorted(months_for_year.keys(), reverse=True):
         calendar.append(CalendarYear(year=y, months=months_for_year[y]))
 
-    # ----- km por dia de semana y estacionalidad (historico global del usuario) -----
-    all_routes_user = db.query(Route).filter(Route.user_id == user_id).all()
+    # ----- km por dia de semana, estacionalidad y calendario mini (historico global) -----
+    all_routes_user = (
+        db.query(Route.started_at, Route.distance_km)
+        .filter(Route.user_id == user_id)
+        .all()
+    )
     km_by_weekday = [0.0] * 7
     km_by_month_hist = [0.0] * 12
+    km_by_ym_all: Dict[Tuple[int, int], float] = defaultdict(float)
     for r in all_routes_user:
         if r.started_at:
             km_by_weekday[r.started_at.weekday()] += r.distance_km
             km_by_month_hist[r.started_at.month - 1] += r.distance_km
+            km_by_ym_all[(r.started_at.year, r.started_at.month)] += r.distance_km
     km_by_weekday = [round(v, 1) for v in km_by_weekday]
     km_by_month_hist = [round(v, 1) for v in km_by_month_hist]
+
+    # todos los años históricos: para cada año distinto en km_by_ym_all (excepto el actual),
+    # los mismos 14 slots de months_14 desplazados al año correspondiente
+    current_year = today.year
+    hist_years = sorted({y for y, m in km_by_ym_all.keys() if y != current_year})
+    monthly_prev_year: Dict[int, List[float]] = {
+        yr: [round(km_by_ym_all.get((yr, m), 0.0), 1) for m in range(1, 13)]
+        for yr in hist_years
+    }
+
+    # Calendario mini: histórico completo por (año, mes), siempre 12 meses por año
+    if km_by_ym_all:
+        start_year = max(min(km_by_ym_all.keys())[0], today.year - 2)
+        cal_mini_months_for_year: Dict[int, List[CalendarMonth]] = defaultdict(list)
+        for y in range(start_year, today.year + 1):
+            for m in range(1, 13):
+                if (y, m) > (today.year, today.month):
+                    break
+                v = round(km_by_ym_all.get((y, m), 0.0), 1)
+                if v > 60:
+                    level = "lvl4"
+                elif v > 35:
+                    level = "lvl3"
+                elif v > 15:
+                    level = "lvl2"
+                elif v > 0:
+                    level = "lvl1"
+                else:
+                    level = ""
+                title = (f"{MONTH_LABELS_ES[m-1]} {y} · {v:.0f} km" if v > 0
+                         else f"{MONTH_LABELS_ES[m-1]} {y} · sin actividad")
+                cal_mini_months_for_year[y].append(CalendarMonth(
+                    label=MONTH_LABELS_ES[m - 1],
+                    weeks=[{"level": level, "title": title, "v": v}],  # type: ignore[list-item]
+                ))
+        calendar_mini: List[CalendarYear] = [
+            CalendarYear(year=y, months=cal_mini_months_for_year[y])
+            for y in sorted(cal_mini_months_for_year.keys(), reverse=True)
+        ]
+    else:
+        calendar_mini = []
 
     # ----- 08 · COMPARADOR (todas las rutas únicas, una entrada por clave) -----
     comparator_routes: List[ComparatorRoute] = []
@@ -989,6 +1011,7 @@ def build_analisis(
             ele_max=int(ref.max_altitude_m or 0),
             line=ref.elev_line_path or "",
             area=ref.elev_area_path or "",
+            last_date_str=_fmt_date_es(max(r.started_at for r in lst)),
         ))
     comparator_routes.sort(key=lambda c: c.name.lower())
 
@@ -1007,9 +1030,9 @@ def build_analisis(
         streak=streak,
         discovery=discovery,
         top_routes=top_routes,
-        dormidas=dormidas,
         monthly=monthly,
         monthly_max=monthly_max,
+        monthly_prev_year=monthly_prev_year,
         donut_difficulty=donut_difficulty,
         donut_difficulty_total=diff_total,
         donut_distance=donut_distance,
@@ -1019,6 +1042,7 @@ def build_analisis(
         scatter_max_gain=int(scatter_max_gain),
         records=records,
         calendar=calendar,
+        calendar_mini=calendar_mini,
         km_by_day=km_by_day_payload,
         km_by_weekday=km_by_weekday,
         km_by_month_hist=km_by_month_hist,
@@ -1078,11 +1102,15 @@ def to_json_payload(data: AnalisisData) -> Dict:
         ],
         "monthly": [
             {"label": m.label, "sessions": m.sessions,
-             "unique": m.unique_routes,
+             "unique": m.unique_routes, "km": m.km,
              "sessionsH": m.sessions_h, "uniqueH": m.unique_h}
             for m in data.monthly
         ],
         "monthlyMax": data.monthly_max,
+        "monthlyPrevYear": {
+            str(yr): vals
+            for yr, vals in data.monthly_prev_year.items()
+        },
         "donutDifficulty": [
             {"label": p.label, "value": p.value, "pct": p.pct, "css": p.css_class}
             for p in data.donut_difficulty
@@ -1108,7 +1136,8 @@ def to_json_payload(data: AnalisisData) -> Dict:
              "level": c.level, "levelLabel": c.level_label,
              "duration": c.duration, "pace": c.pace,
              "eleMin": c.ele_min, "eleMax": c.ele_max,
-             "line": c.line, "area": c.area}
+             "line": c.line, "area": c.area,
+             "date": c.last_date_str}
             for c in data.comparator_routes
         ],
     }
