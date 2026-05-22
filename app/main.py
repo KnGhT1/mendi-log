@@ -188,9 +188,9 @@ async def _http_exception_with_login_redirect(request: Request, exc: HTTPExcepti
     return await http_exception_handler(request, exc)
 
 
-def _commit(db: Session, *, invalidate: bool = False) -> None:
+def _commit(db: Session, *, invalidate: bool = False, user_id: int | None = None) -> None:
     """Alias hacia `app.db.commit` — mantiene la firma histórica."""
-    _db_commit(db, invalidate_analisis=invalidate)
+    _db_commit(db, invalidate_analisis=invalidate, user_id=user_id)
 
 
 # ===== Flash messages server-side (con propietario) =====
@@ -640,7 +640,7 @@ async def importar_post(
         else:
             errors.append(f"{result.filename}: {result.error_msg}")
 
-    _commit(db, invalidate=bool(imported))
+    _commit(db, invalidate=bool(imported), user_id=current_user.id)
 
     msg_parts: list[str] = []
     if imported:
@@ -719,7 +719,7 @@ async def importar_stream(
                             "message": result.error_msg})
                 continue
 
-            _commit(db, invalidate=True)
+            _commit(db, invalidate=True, user_id=user_id)
             imported += 1
             yield emit({"type": "ok", "i": i, "name": filename,
                         "route_id": result.route_id, "name_clean": result.name_clean})
@@ -749,7 +749,7 @@ def api_limpiar_duplicados(
     """Limpia duplicados de GPX dentro del usuario actual."""
     result = maintenance_module.limpiar_duplicados(db, current_user.id, dry_run=dry_run)
     if result["deleted"]:
-        _commit(db, invalidate=True)
+        _commit(db, invalidate=True, user_id=current_user.id)
     return result
 
 
@@ -924,7 +924,7 @@ def api_actualizar_nombre(
     r = user_route_get_or_404(db, current_user.id, route_id)
     r.name = payload.name
     r.updated_at = datetime.now(UTC)
-    _commit(db, invalidate=True)
+    _commit(db, invalidate=True, user_id=current_user.id)
     return {"ok": True, "name": r.name}
 
 
@@ -940,7 +940,7 @@ def renombrar(
     r = user_route_get_or_404(db, current_user.id, route_id)
     r.name = new_name.strip() or r.name
     r.updated_at = datetime.now(UTC)
-    _commit(db, invalidate=True)
+    _commit(db, invalidate=True, user_id=current_user.id)
     return {"ok": True, "name": r.name}
 
 
@@ -961,7 +961,7 @@ def eliminar(
             except OSError:
                 pass
     db.delete(r)
-    _commit(db, invalidate=True)
+    _commit(db, invalidate=True, user_id=current_user.id)
     return RedirectResponse("/rutas", status_code=303)
 
 
@@ -984,7 +984,7 @@ def api_reprocesar(
             except (json.JSONDecodeError, AttributeError):
                 pass
             yield line
-        _commit(db, invalidate=bool(updated))
+        _commit(db, invalidate=bool(updated), user_id=user_id)
 
     return StreamingResponse(
         generate(),
@@ -1012,7 +1012,7 @@ def api_backfill_regions(
             except (json.JSONDecodeError, AttributeError):
                 pass
             yield line
-        _commit(db, invalidate=bool(updated))
+        _commit(db, invalidate=bool(updated), user_id=user_id)
 
     return StreamingResponse(
         generate(),
@@ -1038,7 +1038,7 @@ def api_eliminar(
             except OSError:
                 pass
     db.delete(r)
-    _commit(db, invalidate=True)
+    _commit(db, invalidate=True, user_id=current_user.id)
     return {"ok": True}
 
 
@@ -1426,5 +1426,5 @@ def api_usuarios_delete(
             pass
     # Invalida cache de análisis del usuario eliminado (sus rutas dejaron de existir).
     from app.analisis import invalidate_analisis_cache
-    invalidate_analisis_cache()
+    invalidate_analisis_cache(target_id)
     return {"ok": True, "deleted_id": target_id}

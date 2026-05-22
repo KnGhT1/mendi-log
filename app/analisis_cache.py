@@ -59,10 +59,15 @@ def get_analisis_cached(
     return data
 
 
-def invalidate_analisis_cache() -> None:
-    """Vacía el cache. Llamar tras cualquier escritura que cambie agregaciones."""
+def invalidate_analisis_cache(user_id: int) -> None:
+    """Elimina las entradas del cache del usuario afectado.
+
+    Solo invalida las claves que pertenecen a `user_id`, dejando intacto
+    el cache del resto de usuarios.
+    """
     with _CACHE_LOCK:
-        n = len(_CACHE)
-        _CACHE.clear()
-    if n:
-        logger.info("[analisis] cache cleared (%d entradas)", n)
+        keys = [k for k in _CACHE if k[0] == user_id]
+        for k in keys:
+            del _CACHE[k]
+    if keys:
+        logger.info("[analisis] cache cleared user=%d (%d entradas)", user_id, len(keys))
