@@ -645,105 +645,86 @@
   // ============================================================
   //  08 · COMPARADOR
   // ============================================================
-  const cmpState = { A: null, B: null };
+  const cmpState = { A: null, B: null, normalized: false };
 
-  /**
-   * Inicializa el combo con búsqueda del comparador para el lado `side`
-   * (`"A"` o `"B"`). Filtra `payload.comparator` en tiempo real,
-   * soporta navegación por teclado (↑↓ Enter Escape) y cierra al hacer
-   * clic fuera. Al seleccionar un ítem actualiza `cmpState[side]` y
-   * llama a `renderComparator`.
-   * @param {"A"|"B"} side
-   */
   function setupCombo(side) {
     const wrap = document.querySelector(`.ana-combo[data-side="${side}"]`);
-    if (!wrap || !payload || !payload.comparator) return;
+    if (!wrap) return;
     const input = $(".ana-combo-input", wrap);
     const list = $(".ana-combo-list", wrap);
-    const items = payload.comparator;
-    let activeIdx = -1;
+    let activeIdx = -1, debounceTimer = null;
 
     function close() { wrap.classList.remove("is-open"); activeIdx = -1; }
     function open() { wrap.classList.add("is-open"); }
 
     function highlight(text, q) {
       if (!q) return escapeHtml(text);
-      const qLow = q.toLowerCase();
-      const tLow = text.toLowerCase();
-      const idx = tLow.indexOf(qLow);
+      const idx = text.toLowerCase().indexOf(q.toLowerCase());
       if (idx === -1) return escapeHtml(text);
-      const a = escapeHtml(text.slice(0, idx));
-      const b = escapeHtml(text.slice(idx, idx + q.length));
-      const c = escapeHtml(text.slice(idx + q.length));
-      return `${a}<mark>${b}</mark>${c}`;
+      return escapeHtml(text.slice(0, idx)) +
+        `<mark>${escapeHtml(text.slice(idx, idx + q.length))}</mark>` +
+        escapeHtml(text.slice(idx + q.length));
     }
 
-    function renderList(filter) {
-      const q = (filter || "").trim().toLowerCase();
-      const filtered = items.filter(it => {
-        if (!q) return true;
-        return it.name.toLowerCase().includes(q) ||
-               (it.origin || "").toLowerCase().includes(q);
-      });
-      if (!filtered.length) {
-        list.innerHTML = `<div class="ana-combo-empty">sin resultados</div>`;
-        return;
-      }
-      list.innerHTML = filtered.map((it, i) =>
-        `<button type="button" class="ana-combo-item ${i === activeIdx ? 'is-active' : ''}" data-key="${escapeHtml(it.key)}">
-           <div>${highlight(it.name, q)}</div>
-           <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;opacity:.7">${escapeHtml(it.origin)} · ${it.km} km${it.date ? ` · ${it.date}` : ""}</div>
-         </button>`
-      ).join("");
+    async function fetchItems(q) {
+      list.innerHTML = `<div class="ana-combo-empty">buscando…</div>`;
+      try {
+        const res = await fetch(`/api/comparator/search?q=${encodeURIComponent(q)}&limit=20`, { credentials: "same-origin" });
+        if (!res.ok) throw new Error(res.status);
+        const data = await res.json();
+        const lc = { easy: "#7DAFC9", moderate: "#B5D17A", hard: "#E8B86D", "very-hard": "#E47862" };
+        if (!data.items || !data.items.length) { list.innerHTML = `<div class="ana-combo-empty">sin resultados</div>`; return; }
+        list.innerHTML = data.items.map((it, i) =>
+          `<button type="button" class="ana-combo-item" data-key="${escapeHtml(it.key)}">`+
+          `<div>${highlight(it.name, q)}</div>`+
+          `<div class="ana-combo-item-meta"><span>${escapeHtml(it.date)}</span>`+
+          `<span>${it.km} km</span><span style="color:${lc[it.level]||'#888'}">${escapeHtml(it.levelLabel)}</span></div></button>`
+        ).join("");
+      } catch (_) { list.innerHTML = `<div class="ana-combo-empty">error al buscar</div>`; }
     }
-
-    input.addEventListener("focus", () => { renderList(input.value); open(); });
-    input.addEventListener("input", () => { renderList(input.value); open(); });
+    function schedule(q) { clearTimeout(debounceTimer); debounceTimer = setTimeout(() => fetchItems(q), 250); }
+    input.addEventListener("focus", () => { open(); fetchItems(input.value); });
+    input.addEventListener("input", () => { open(); schedule(input.value); });
     input.addEventListener("keydown", (e) => {
       const visible = $$(".ana-combo-item", list);
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        activeIdx = Math.min(visible.length - 1, activeIdx + 1);
-        renderList(input.value);
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        activeIdx = Math.max(0, activeIdx - 1);
-        renderList(input.value);
-      } else if (e.key === "Enter") {
+      if (e.key === "ArrowDown") { e.preventDefault(); activeIdx = Math.min(visible.length - 1, activeIdx + 1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); activeIdx = Math.max(0, activeIdx - 1); }
+      else if (e.key === "Enter") {
         e.preventDefault();
         const target = visible[activeIdx] || visible[0];
-        if (target) {
-          const key = target.dataset.key;
-          const item = items.find(x => x.key === key);
-          if (item) selectItem(item);
-        }
-      } else if (e.key === "Escape") {
-        close();
-      }
+        if (target) target.click();
+      } else if (e.key === "Escape") { close(); }
     });
-
-    list.addEventListener("click", (e) => {
-      const btn = e.target.closest(".ana-combo-item");
-      if (!btn) return;
-      const item = items.find(x => x.key === btn.dataset.key);
-      if (item) selectItem(item);
+    list.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".ana-combo-item"); if (!btn) return;
+      const key = btn.dataset.key;
+      const nameEl = btn.querySelector("div:first-child");
+      const q = nameEl ? nameEl.textContent.trim() : "";
+      try {
+        const res = await fetch(`/api/comparator/search?q=${encodeURIComponent(q)}&limit=50`, { credentials: "same-origin" });
+        const data = await res.json();
+        const item = (data.items || []).find(it => it.key === key);
+        if (item) { cmpState[side] = item; input.value = item.name + " · " + item.date; close(); renderComparator(); }
+      } catch (_) {}
     });
-
-    // Cerrar al click fuera
-    function outsideClick(e) {
-      if (!wrap.contains(e.target)) close();
-    }
+    function outsideClick(e) { if (!wrap.contains(e.target)) close(); }
     document.addEventListener("click", outsideClick);
-    window.MENDI_TEARDOWN.push(() => {
-      document.removeEventListener("click", outsideClick);
-    });
+    window.MENDI_TEARDOWN.push(() => { document.removeEventListener("click", outsideClick); clearTimeout(debounceTimer); });
 
-    function selectItem(item) {
-      cmpState[side] = item;
-      input.value = item.name;
-      close();
+  }
+
+  // Toggle normalizado/real
+  function initCmpToggle() {
+    const btn = document.getElementById("ana-cmp-normalize");
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      cmpState.normalized = !cmpState.normalized;
+      $$(".ana-cmp-toggle-opt", btn).forEach(opt => {
+        opt.classList.toggle("is-active",
+          (opt.dataset.mode === "norm") === cmpState.normalized);
+      });
       renderComparator();
-    }
+    });
   }
 
   // ---- Helpers para extraer puntos de los SVG paths del backend ----
@@ -790,12 +771,6 @@
     }));
   }
 
-  /**
-   * Renderiza el overlay SVG del comparador de perfiles (`#ana-cmp-overlay`)
-   * con las rutas A y B de `cmpState`. Calcula el sistema de coordenadas
-   * común (maxKm, minEle/maxEle), pinta grid, áreas y líneas de cada
-   * ruta, y actualiza ejes y tabla de métricas.
-   */
   function renderComparator() {
     const svg = document.getElementById("ana-cmp-overlay");
     if (!svg) return;
@@ -803,19 +778,18 @@
 
     const A = cmpState.A;
     const B = cmpState.B;
+    const normalized = cmpState.normalized;
 
     const colorA = cssVar("--accent-warm") || "#E8B86D";
     const colorB = cssVar("--accent-cool") || "#7DAFC9";
     const cBorder = cssVar("--border");
     const cDim = cssVar("--text-dim");
 
-    // Pintar leyenda con nombres
     const legA = document.querySelector('#ana-cmp-legend [data-side="A"]');
     const legB = document.querySelector('#ana-cmp-legend [data-side="B"]');
-    if (legA) legA.textContent = A ? A.name : "ruta A";
-    if (legB) legB.textContent = B ? B.name : "ruta B";
+    if (legA) legA.textContent = A ? `${A.name} · ${A.date}` : "sesión A";
+    if (legB) legB.textContent = B ? `${B.name} · ${B.date}` : "sesión B";
 
-    // ViewBox 800 x 260: 800x200 para gráfico + márgenes laterales
     const W = 800, H = 260;
     const PAD_L = 50, PAD_R = 24, PAD_T = 16, PAD_B = 36;
     const innerW = W - PAD_L - PAD_R;
@@ -826,25 +800,36 @@
 
     if (!ptsA.length && !ptsB.length) {
       svg.insertAdjacentHTML("beforeend",
-        `<text x="${W/2}" y="${H/2}" text-anchor="middle" font-family="IBM Plex Mono" font-size="12" fill="${cDim}">elige dos rutas para comparar</text>`);
+        `<text x="${W/2}" y="${H/2}" text-anchor="middle" font-family="IBM Plex Mono" font-size="12" fill="${cDim}">elige dos sesiones para comparar</text>`);
       updateCmpAxes(0, 0);
       updateCmpTable();
       return;
     }
 
-    const allPts = ptsA.concat(ptsB);
-    const maxKm = Math.max(...allPts.map(p => p.km), 0.1);
-    const minEle = Math.min(...allPts.map(p => p.ele));
-    const maxEle = Math.max(...allPts.map(p => p.ele));
+    // En modo normalizado cada ruta ocupa el 100% del eje X
+    const maxKmA = A ? A.refKm : 0;
+    const maxKmB = B ? B.refKm : 0;
+    const maxKm = normalized ? 1.0 : Math.max(maxKmA, maxKmB, 0.1);
+
+    function normX(pt, refKm) {
+      return normalized ? pt.km / (refKm || 1) : pt.km / maxKm;
+    }
+
+    const allPts = [
+      ...ptsA.map(p => p.ele),
+      ...ptsB.map(p => p.ele),
+    ];
+    const minEle = allPts.length ? Math.min(...allPts) : 0;
+    const maxEle = allPts.length ? Math.max(...allPts) : 1;
     const dEle = (maxEle - minEle) || 1;
 
-    function project(pt) {
-      const x = PAD_L + (pt.km / maxKm) * innerW;
+    function project(pt, refKm) {
+      const x = PAD_L + normX(pt, refKm) * innerW;
       const y = PAD_T + (1 - (pt.ele - minEle) / dEle) * innerH;
       return [x, y];
     }
 
-    // Grid de fondo: 4 líneas horizontales con etiquetas de altitud
+    // Grid
     let grid = "";
     for (let i = 0; i <= 4; i++) {
       const y = PAD_T + (innerH / 4) * i;
@@ -853,71 +838,118 @@
       grid += `<text x="${PAD_L - 8}" y="${y + 3}" text-anchor="end" font-family="IBM Plex Mono" font-size="9" fill="${cDim}">${fmtInt(ele)}</text>`;
     }
     svg.insertAdjacentHTML("beforeend", grid);
-
-    // Etiqueta vertical "m"
     svg.insertAdjacentHTML("beforeend",
       `<text x="14" y="${PAD_T + innerH/2}" text-anchor="middle" transform="rotate(-90 14 ${PAD_T + innerH/2})" font-family="IBM Plex Mono" font-size="9" fill="${cDim}" letter-spacing="0.1em">ALTITUD m</text>`);
 
-    function paintRoute(pts, color, sideTag) {
+    function paintRoute(pts, color, refKm) {
       if (!pts.length) return;
-      const projected = pts.map(project);
-      // path lineal
+      const projected = pts.map(p => project(p, refKm));
       let line = "";
-      projected.forEach(([x, y], i) => {
-        line += (i === 0 ? "M" : "L") + ` ${x.toFixed(1)} ${y.toFixed(1)} `;
-      });
-      // path área
+      projected.forEach(([x, y], i) => { line += (i === 0 ? "M" : "L") + ` ${x.toFixed(1)} ${y.toFixed(1)} `; });
       let area = `M ${projected[0][0].toFixed(1)} ${PAD_T + innerH} `;
-      projected.forEach(([x, y]) => {
-        area += `L ${x.toFixed(1)} ${y.toFixed(1)} `;
-      });
+      projected.forEach(([x, y]) => { area += `L ${x.toFixed(1)} ${y.toFixed(1)} `; });
       area += `L ${projected[projected.length - 1][0].toFixed(1)} ${PAD_T + innerH} Z`;
-
-      const gid = `cmp-grad-${sideTag}-${Math.random().toString(36).slice(2, 6)}`;
+      const gid = `cmp-grad-${Math.random().toString(36).slice(2, 6)}`;
       svg.insertAdjacentHTML("beforeend",
         `<defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stop-color="${color}" stop-opacity="0.30"/>
           <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
         </linearGradient></defs>`);
-      svg.insertAdjacentHTML("beforeend",
-        `<path d="${area}" fill="url(#${gid})"/>`);
+      svg.insertAdjacentHTML("beforeend", `<path d="${area}" fill="url(#${gid})"/>`);
       svg.insertAdjacentHTML("beforeend",
         `<path d="${line}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`);
     }
 
-    paintRoute(ptsA, colorA, "A");
-    paintRoute(ptsB, colorB, "B");
+    paintRoute(ptsA, colorA, maxKmA);
+    paintRoute(ptsB, colorB, maxKmB);
 
-    updateCmpAxes(maxKm / 2, maxKm);
+    // Eje X label
+    const midLabel = normalized ? "50%" : `${fmtKm(maxKm / 2)} km`;
+    const maxLabel = normalized ? "100%" : `${fmtKm(maxKm)} km`;
+    updateCmpAxes(midLabel, maxLabel);
     updateCmpTable();
+
+    // Cursor sincronizado
+    initCmpCursor(ptsA, ptsB, maxKmA, maxKmB, minEle, maxEle, dEle, normalized, maxKm,
+                  PAD_L, PAD_R, PAD_T, PAD_B, innerW, innerH, W, H, colorA, colorB);
   }
 
-  /**
-   * Actualiza las etiquetas del eje X del comparador (`#ana-cmp-mid-km`
-   * y `#ana-cmp-max-km`) con los valores de km medio y máximo.
-   * @param {number} midKm
-   * @param {number} maxKm
-   */
-  function updateCmpAxes(midKm, maxKm) {
+  function initCmpCursor(ptsA, ptsB, maxKmA, maxKmB, minEle, maxEle, dEle, normalized, maxKm,
+                         PAD_L, PAD_R, PAD_T, PAD_B, innerW, innerH, W, H, colorA, colorB) {
+    const wrap = document.getElementById("ana-cmp-chart-wrap");
+    const svg  = document.getElementById("ana-cmp-overlay");
+    const cursor = document.getElementById("ana-cmp-cursor");
+    const tip    = document.getElementById("ana-cmp-cursor-tip");
+    if (!wrap || !svg || !cursor || !tip) return;
+
+    function interpEle(pts, refKm, xPct) {
+      if (!pts.length) return null;
+      const km = xPct * (normalized ? refKm : maxKm);
+      // buscar el segmento que contiene km
+      for (let i = 1; i < pts.length; i++) {
+        if (pts[i].km >= km) {
+          const t = (km - pts[i-1].km) / (pts[i].km - pts[i-1].km || 1);
+          return pts[i-1].ele + t * (pts[i].ele - pts[i-1].ele);
+        }
+      }
+      return pts[pts.length - 1].ele;
+    }
+
+    function onMove(e) {
+      const rect = svg.getBoundingClientRect();
+      const scaleX = W / rect.width;
+      const mx = (e.clientX - rect.left) * scaleX;
+      if (mx < PAD_L || mx > W - PAD_R) { cursor.hidden = true; tip.hidden = true; return; }
+      const xPct = (mx - PAD_L) / innerW;
+      // posición del cursor en px del wrap
+      const cursorX = (mx / W) * rect.width;
+      cursor.style.left = `${cursorX}px`;
+      cursor.hidden = false;
+
+      const eleA = interpEle(ptsA, maxKmA, xPct);
+      const eleB = interpEle(ptsB, maxKmB, xPct);
+      const kmA  = xPct * (normalized ? maxKmA : maxKm);
+      const kmB  = xPct * (normalized ? maxKmB : maxKm);
+
+      let html = "";
+      if (eleA !== null) html += `<span style="color:${colorA}">● A</span> ${fmtInt(Math.round(eleA))} m · ${fmtKm(kmA)} km<br>`;
+      if (eleB !== null) html += `<span style="color:${colorB}">● B</span> ${fmtInt(Math.round(eleB))} m · ${fmtKm(kmB)} km`;
+      tip.innerHTML = html;
+      tip.hidden = false;
+      // posicionar tip
+      const tipLeft = cursorX + 10;
+      tip.style.left = `${Math.min(tipLeft, rect.width - 140)}px`;
+      tip.style.top = "16px";
+    }
+
+    function onLeave() { cursor.hidden = true; tip.hidden = true; }
+
+    svg.addEventListener("mousemove", onMove);
+    svg.addEventListener("mouseleave", onLeave);
+    window.MENDI_TEARDOWN.push(() => {
+      svg.removeEventListener("mousemove", onMove);
+      svg.removeEventListener("mouseleave", onLeave);
+    });
+  }
+
+  function updateCmpAxes(midLabel, maxLabel) {
     const mid = document.getElementById("ana-cmp-mid-km");
-    const mx = document.getElementById("ana-cmp-max-km");
-    if (mid) mid.textContent = midKm > 0 ? `${fmtKm(midKm)} km` : "— km";
-    if (mx) mx.textContent = maxKm > 0 ? `${fmtKm(maxKm)} km` : "— km";
+    const mx  = document.getElementById("ana-cmp-max-km");
+    if (mid) mid.textContent = midLabel || "—";
+    if (mx)  mx.textContent  = maxLabel  || "—";
   }
 
-  /**
-   * Rellena la tabla de métricas del comparador (`#ana-cmp-table`) con
-   * los valores de las rutas A y B, y marca con `is-best` la celda
-   * ganadora de cada métrica según `computeWinners`.
-   */
   function updateCmpTable() {
     const A = cmpState.A;
     const B = cmpState.B;
-    const fmt = (item, key, suf) => {
+    const fmt = (item, key) => {
       if (!item) return "—";
       switch (key) {
         case "distance": return `${fmtKm(item.km)} <em>km</em>`;
         case "gain":     return `${fmtInt(item.gain)} <em>m</em>`;
+        case "loss":     return `${fmtInt(item.loss)} <em>m</em>`;
+        case "gainpct":  return `${String(item.gainPct).replace(".",",")} <em>m/km</em>`;
+        case "losspct":  return `${String(item.lossPct).replace(".",",")} <em>m/km</em>`;
         case "score":    return `${String(item.score).replace(".", ",")} <em>/10</em>`;
         case "duration": return item.duration || "—";
         case "pace":     return item.pace || "—";
@@ -937,20 +969,9 @@
     });
   }
 
-  // Devuelve quién "gana" cada métrica. Para tiempo/ritmo, menor es mejor;
-  // para distancia/desnivel/score, mayor (más reto). Altitud no compite.
-  /**
-   * Determina qué ruta gana cada métrica del comparador. Para
-   * distancia, desnivel y score gana el valor mayor; para tiempo y
-   * ritmo gana el menor. Devuelve `null` en una métrica si los valores
-   * son iguales o alguno falta.
-   * @param {object|null} A
-   * @param {object|null} B
-   * @returns {{distance:"A"|"B"|null, gain:"A"|"B"|null, score:"A"|"B"|null,
-   *            duration:"A"|"B"|null, pace:"A"|"B"|null, alt:null}}
-   */
   function computeWinners(A, B) {
-    const out = { distance: null, gain: null, score: null, duration: null, pace: null, alt: null };
+    const out = { distance: null, gain: null, loss: null, gainpct: null, losspct: null,
+                  score: null, duration: null, pace: null, alt: null };
     if (!A || !B) return out;
     const cmp = (a, b, dir) => {
       if (a == null || b == null || a === b) return null;
@@ -958,22 +979,12 @@
     };
     out.distance = cmp(A.km, B.km, "max");
     out.gain     = cmp(A.gain, B.gain, "max");
+    out.loss     = cmp(A.loss, B.loss, "max");
+    out.gainpct  = cmp(A.gainPct, B.gainPct, "max");
+    out.losspct  = cmp(A.lossPct, B.lossPct, "max");
     out.score    = cmp(A.score, B.score, "max");
-    // Pace formato "mm:ss /km" y duration "Hh Mm" — usamos un parser simple
-    const paceSec = (s) => {
-      if (!s || typeof s !== "string") return Infinity;
-      const m = s.match(/(\d+):(\d+)/);
-      return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : Infinity;
-    };
-    const durSec = (s) => {
-      if (!s || typeof s !== "string") return Infinity;
-      let total = 0;
-      const h = s.match(/(\d+)\s*h/);
-      const m = s.match(/(\d+)\s*m/);
-      if (h) total += parseInt(h[1], 10) * 3600;
-      if (m) total += parseInt(m[1], 10) * 60;
-      return total || Infinity;
-    };
+    const paceSec = s => { if (!s) return Infinity; const m = s.match(/(\d+):(\d+)/); return m ? +m[1]*60 + +m[2] : Infinity; };
+    const durSec  = s => { if (!s) return Infinity; let t=0; const h=s.match(/(\d+)\s*h/),m=s.match(/(\d+)\s*m/); if(h)t+=+h[1]*3600; if(m)t+=+m[1]*60; return t||Infinity; };
     out.pace     = cmp(paceSec(A.pace), paceSec(B.pace), "min");
     out.duration = cmp(durSec(A.duration), durSec(B.duration), "min");
     return out;
@@ -986,19 +997,22 @@
    * `renderComparator`. Se ejecuta una vez al inicializar la página.
    */
   function autoSelectComparator() {
-    if (!payload || !payload.comparator || !payload.comparator.length) return;
-    const list = payload.comparator;
-    if (list[0]) {
-      cmpState.A = list[0];
-      const inA = document.querySelector('.ana-combo[data-side="A"] .ana-combo-input');
-      if (inA) inA.value = list[0].name;
-    }
-    if (list[1]) {
-      cmpState.B = list[1];
-      const inB = document.querySelector('.ana-combo[data-side="B"] .ana-combo-input');
-      if (inB) inB.value = list[1].name;
-    }
-    renderComparator();
+    fetch("/api/comparator/search?q=&limit=2", { credentials: "same-origin" })
+      .then(r => r.json())
+      .then(data => {
+        const list = data.items || [];
+        if (list[0]) {
+          cmpState.A = list[0];
+          const inA = document.querySelector('[data-side="A"] .ana-combo-input');
+          if (inA) inA.value = list[0].name + " · " + list[0].date;
+        }
+        if (list[1]) {
+          cmpState.B = list[1];
+          const inB = document.querySelector('[data-side="B"] .ana-combo-input');
+          if (inB) inB.value = list[1].name + " · " + list[1].date;
+        }
+        renderComparator();
+      }).catch(() => {});
   }
 
   // ============================================================
@@ -1359,6 +1373,7 @@
       });
       setupCombo("A");
       setupCombo("B");
+      initCmpToggle();
       autoSelectComparator();
       initSectionNav();
 

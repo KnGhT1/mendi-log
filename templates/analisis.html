@@ -465,7 +465,7 @@
       <div class="section-num">07</div>
       <h2 class="section-title">Comparador</h2>
     </div>
-    <div class="section-meta">elige dos rutas únicas y enfréntalas</div>
+    <div class="section-meta">elige dos sesiones y enfréntalas</div>
   </div>
 
   <div class="ana-cmp">
@@ -473,7 +473,7 @@
       <div class="ana-cmp-picker">
         <span class="ana-cmp-pin ana-cmp-pin-A">A</span>
         <div class="ana-combo" data-side="A">
-          <input type="text" class="ana-combo-input" placeholder="busca ruta A..." autocomplete="off">
+          <input type="text" class="ana-combo-input" placeholder="busca sesión A..." autocomplete="off">
           <div class="ana-combo-list"></div>
         </div>
       </div>
@@ -481,9 +481,15 @@
       <div class="ana-cmp-picker">
         <span class="ana-cmp-pin ana-cmp-pin-B">B</span>
         <div class="ana-combo" data-side="B">
-          <input type="text" class="ana-combo-input" placeholder="busca ruta B..." autocomplete="off">
+          <input type="text" class="ana-combo-input" placeholder="busca sesión B..." autocomplete="off">
           <div class="ana-combo-list"></div>
         </div>
+      </div>
+      <div class="ana-cmp-toggle-wrap">
+        <button type="button" id="ana-cmp-normalize" class="ana-cmp-toggle" title="Normalizar eje X al 100% de cada ruta">
+          <span class="ana-cmp-toggle-opt is-active" data-mode="real">distancia real</span>
+          <span class="ana-cmp-toggle-opt" data-mode="norm">normalizado</span>
+        </button>
       </div>
     </div>
 
@@ -495,11 +501,15 @@
           <span class="ana-cmp-leg ana-cmp-leg-B"><i></i><strong data-side="B">B</strong></span>
         </div>
       </div>
-      <svg id="ana-cmp-overlay" viewBox="0 0 800 260" class="ana-cmp-overlay"></svg>
+      <div class="ana-cmp-chart-wrap" id="ana-cmp-chart-wrap">
+        <svg id="ana-cmp-overlay" viewBox="0 0 800 260" class="ana-cmp-overlay"></svg>
+        <div id="ana-cmp-cursor" class="ana-cmp-cursor" hidden></div>
+        <div id="ana-cmp-cursor-tip" class="ana-cmp-cursor-tip" hidden></div>
+      </div>
       <div class="ana-cmp-axes">
-        <span>0 km</span>
-        <span id="ana-cmp-mid-km">— km</span>
-        <span id="ana-cmp-max-km">— km</span>
+        <span>0</span>
+        <span id="ana-cmp-mid-km">—</span>
+        <span id="ana-cmp-max-km">—</span>
       </div>
     </div>
 
@@ -511,6 +521,9 @@
       </div>
       <div class="ana-cmp-row" data-metric="distance"><div class="ana-cmp-lbl">distancia</div><div class="ana-cmp-val ana-cmp-A">—</div><div class="ana-cmp-val ana-cmp-B">—</div></div>
       <div class="ana-cmp-row" data-metric="gain"><div class="ana-cmp-lbl">desnivel +</div><div class="ana-cmp-val ana-cmp-A">—</div><div class="ana-cmp-val ana-cmp-B">—</div></div>
+      <div class="ana-cmp-row" data-metric="loss"><div class="ana-cmp-lbl">desnivel −</div><div class="ana-cmp-val ana-cmp-A">—</div><div class="ana-cmp-val ana-cmp-B">—</div></div>
+      <div class="ana-cmp-row" data-metric="gainpct"><div class="ana-cmp-lbl">m+/km</div><div class="ana-cmp-val ana-cmp-A">—</div><div class="ana-cmp-val ana-cmp-B">—</div></div>
+      <div class="ana-cmp-row" data-metric="losspct"><div class="ana-cmp-lbl">m−/km</div><div class="ana-cmp-val ana-cmp-A">—</div><div class="ana-cmp-val ana-cmp-B">—</div></div>
       <div class="ana-cmp-row" data-metric="score"><div class="ana-cmp-lbl">dificultad</div><div class="ana-cmp-val ana-cmp-A">—</div><div class="ana-cmp-val ana-cmp-B">—</div></div>
       <div class="ana-cmp-row" data-metric="duration"><div class="ana-cmp-lbl">tiempo</div><div class="ana-cmp-val ana-cmp-A">—</div><div class="ana-cmp-val ana-cmp-B">—</div></div>
       <div class="ana-cmp-row" data-metric="pace"><div class="ana-cmp-lbl">ritmo</div><div class="ana-cmp-val ana-cmp-A">—</div><div class="ana-cmp-val ana-cmp-B">—</div></div>

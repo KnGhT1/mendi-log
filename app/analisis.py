@@ -175,12 +175,17 @@ class CalendarYear:
 
 @dataclass
 class ComparatorRoute:
-    key: str
+    key: str           # route.id (sesión individual)
     name: str
     origin: str
+    date_str: str      # fecha de la sesión
+    date_iso: str      # ISO para ordenar
     km: float
-    ref_km: float      # distancia exacta de la sesión usada para el SVG
-    gain: int
+    ref_km: float
+    gain: int          # desnivel +
+    loss: int          # desnivel -
+    gain_pct: float    # m+ / km
+    loss_pct: float    # m- / km
     score: float
     level: str
     level_label: str
@@ -188,9 +193,9 @@ class ComparatorRoute:
     pace: str
     ele_min: int
     ele_max: int
-    line: str          # SVG path "M ..." (viewBox 800x200, x∈[0,800] = [0,ref_km])
-    area: str          # SVG path "M ..."
-    last_date_str: str = ""  # fecha de la última sesión
+    line: str
+    area: str
+    cluster_name: str  # nombre del cluster (ruta única) para agrupar en el combo
 
 
 @dataclass
@@ -989,31 +994,40 @@ def build_analisis(
     else:
         calendar_mini = []
 
-    # ----- 08 · COMPARADOR (todas las rutas únicas, una entrada por clave) -----
+    # ----- 08 · COMPARADOR (una entrada por sesión individual, ordenadas por fecha desc) -----
     comparator_routes: List[ComparatorRoute] = []
     for k, lst in by_key.items():
-        # tomamos como representante la sesión con mejor perfil (con líneas SVG)
-        with_profile = [r for r in lst if r.elev_line_path]
-        ref = with_profile[0] if with_profile else max(lst, key=lambda r: r.started_at)
-        comparator_routes.append(ComparatorRoute(
-            key=str(k),
-            name=ref.name,
-            origin=_origin_text(ref),
-            km=round(float(ref.distance_km or 0.0), 1),
-            ref_km=round(float(ref.distance_km or 0.0), 2),
-            gain=int(ref.elevation_gain_m or 0),
-            score=round(float(ref.difficulty_score or 0.0), 1),
-            level=ref.difficulty_level,
-            level_label=_difficulty_label_es(ref.difficulty_level),
-            duration=_fmt_duration(ref.moving_time_s or 0),
-            pace=_fmt_pace(ref.distance_km, ref.moving_time_s or 0),
-            ele_min=int(ref.min_altitude_m or 0),
-            ele_max=int(ref.max_altitude_m or 0),
-            line=ref.elev_line_path or "",
-            area=ref.elev_area_path or "",
-            last_date_str=_fmt_date_es(max(r.started_at for r in lst)),
-        ))
-    comparator_routes.sort(key=lambda c: c.name.lower())
+        cluster_ref = max(lst, key=lambda r: r.started_at)  # nombre del cluster = sesión más reciente
+        for r in sorted(lst, key=lambda r: r.started_at, reverse=True):
+            km_val = round(float(r.distance_km or 0.0), 1)
+            gain_val = int(r.elevation_gain_m or 0)
+            loss_val = int(r.elevation_loss_m or 0)
+            gain_pct = round(gain_val / km_val, 1) if km_val > 0 else 0.0
+            loss_pct = round(loss_val / km_val, 1) if km_val > 0 else 0.0
+            comparator_routes.append(ComparatorRoute(
+                key=str(r.id),
+                name=r.name,
+                origin=_origin_text(r),
+                date_str=_fmt_date_es(r.started_at),
+                date_iso=r.started_at.strftime("%Y-%m-%d"),
+                km=km_val,
+                ref_km=round(float(r.distance_km or 0.0), 2),
+                gain=gain_val,
+                loss=loss_val,
+                gain_pct=gain_pct,
+                loss_pct=loss_pct,
+                score=round(float(r.difficulty_score or 0.0), 1),
+                level=r.difficulty_level,
+                level_label=_difficulty_label_es(r.difficulty_level),
+                duration=_fmt_duration(r.moving_time_s or 0),
+                pace=_fmt_pace(r.distance_km, r.moving_time_s or 0),
+                ele_min=int(r.min_altitude_m or 0),
+                ele_max=int(r.max_altitude_m or 0),
+                line=r.elev_line_path or "",
+                area=r.elev_area_path or "",
+                cluster_name=cluster_ref.name,
+            ))
+    comparator_routes.sort(key=lambda c: (c.cluster_name.lower(), c.date_iso), reverse=False)
 
     return AnalisisData(
         has_data=True,
@@ -1129,15 +1143,4 @@ def to_json_payload(data: AnalisisData) -> Dict:
         "kmByDay": data.km_by_day,
         "kmByWeekday": data.km_by_weekday,
         "kmByMonthHist": data.km_by_month_hist,
-        "comparator": [
-            {"key": c.key, "name": c.name, "origin": c.origin,
-             "km": c.km, "refKm": c.ref_km,
-             "gain": c.gain, "score": c.score,
-             "level": c.level, "levelLabel": c.level_label,
-             "duration": c.duration, "pace": c.pace,
-             "eleMin": c.ele_min, "eleMax": c.ele_max,
-             "line": c.line, "area": c.area,
-             "date": c.last_date_str}
-            for c in data.comparator_routes
-        ],
     }

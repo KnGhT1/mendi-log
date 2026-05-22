@@ -741,12 +741,60 @@
   display: grid; gap: 18px;
 }
 .ana-cmp-pickers {
-  display: grid; grid-template-columns: 1fr 60px 1fr; gap: 14px;
-  align-items: center;
+  display: grid; grid-template-columns: 1fr 60px 1fr auto;
+  gap: 14px; align-items: center;
 }
 @media (max-width: 720px) {
   .ana-cmp-pickers { grid-template-columns: 1fr; }
   .ana-cmp-vs { display: none; }
+  .ana-cmp-toggle-wrap { justify-self: start; }
+}
+.ana-cmp-toggle-wrap { display: flex; align-items: center; }
+.ana-cmp-toggle {
+  display: inline-flex;
+  background: var(--surface-2, rgba(255,255,255,0.04));
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+  cursor: pointer;
+}
+.ana-cmp-toggle-opt {
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 4px 10px; border-radius: 999px;
+  transition: background .15s, color .15s;
+  user-select: none;
+}
+.ana-cmp-toggle-opt.is-active {
+  background: var(--accent); color: var(--bg);
+  font-weight: 600;
+}
+/* wrap relativo para el cursor */
+.ana-cmp-chart-wrap {
+  position: relative;
+}
+.ana-cmp-cursor {
+  position: absolute;
+  top: 0; bottom: 24px;
+  width: 1px;
+  background: var(--text-dim);
+  opacity: .5;
+  pointer-events: none;
+}
+.ana-cmp-cursor-tip {
+  position: absolute;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0,0,0,.2);
 }
 .ana-cmp-picker {
   display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: center;
@@ -879,6 +927,19 @@
 }
 .ana-combo-item mark {
   background: transparent; color: var(--accent); font-weight: 600;
+}
+.ana-combo-group {
+  padding: 6px 12px 3px;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--accent); opacity: .7;
+  border-top: 1px solid var(--border);
+}
+.ana-combo-group:first-child { border-top: none; }
+.ana-combo-item-meta {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-dim); margin-top: 2px;
 }
 .ana-combo-empty {
   padding: 10px 12px; font-family: var(--font-mono); font-size: 11px;

@@ -523,11 +523,6 @@ def api_analisis(
          "reps": t.reps, "totalKm": t.total_km, "barPct": t.bar_pct}
         for t in data.top_routes
     ]
-    payload["dormidas"] = [
-        {"name": d.name, "origin": d.origin, "lastDate": d.last_date_str,
-         "daysSince": d.days_since, "km": d.distance_km}
-        for d in data.dormidas
-    ]
     payload["records"] = [
         {"label": r.label, "value": r.value, "unit": r.unit,
          "detail": r.detail, "css": r.css_class}
@@ -543,6 +538,65 @@ def api_analisis(
         for c in data.range_chips
     ]
     return JSONResponse(payload)
+
+
+@app.get("/api/comparator/search")
+def api_comparator_search(
+    q: str = Query(default="", max_length=100),
+    limit: int = Query(default=20, ge=1, le=50),
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Búsqueda de sesiones para el comparador. Devuelve hasta `limit` resultados.
+
+    Filtra por nombre, origen (sub_region/region) y fecha sobre las rutas
+    del usuario en el rango del análisis activo. Acotado al usuario.
+    """
+    from app.analisis import _difficulty_label_es, _fmt_date_es, _fmt_duration, _fmt_pace, _origin_text
+    from app.format import fmt_km
+
+    base = db.query(Route).filter(Route.user_id == current_user.id)
+    if q.strip():
+        term = f"%{q.strip().lower()}%"
+        from sqlalchemy import or_, func as sqlfunc
+        base = base.filter(or_(
+            sqlfunc.lower(Route.name).like(term),
+            sqlfunc.lower(sqlfunc.coalesce(Route.sub_region, "")).like(term),
+            sqlfunc.lower(sqlfunc.coalesce(Route.region, "")).like(term),
+        ))
+    rows = base.order_by(Route.name.asc(), Route.started_at.desc()).limit(limit).all()
+
+    items = []
+    for r in rows:
+        km_val = round(float(r.distance_km or 0), 1)
+        gain_val = int(r.elevation_gain_m or 0)
+        loss_val = int(r.elevation_loss_m or 0)
+        gain_pct = round(gain_val / km_val, 1) if km_val > 0 else 0.0
+        loss_pct = round(loss_val / km_val, 1) if km_val > 0 else 0.0
+        items.append({
+            "key": str(r.id),
+            "name": r.name,
+            "origin": _origin_text(r),
+            "clusterName": r.name,
+            "date": _fmt_date_es(r.started_at),
+            "dateIso": r.started_at.strftime("%Y-%m-%d") if r.started_at else "",
+            "km": km_val,
+            "refKm": round(float(r.distance_km or 0), 2),
+            "gain": gain_val,
+            "loss": loss_val,
+            "gainPct": gain_pct,
+            "lossPct": loss_pct,
+            "score": round(float(r.difficulty_score or 0), 1),
+            "level": r.difficulty_level,
+            "levelLabel": _difficulty_label_es(r.difficulty_level),
+            "duration": _fmt_duration(r.moving_time_s or 0),
+            "pace": _fmt_pace(r.distance_km, r.moving_time_s or 0),
+            "eleMin": int(r.min_altitude_m or 0),
+            "eleMax": int(r.max_altitude_m or 0),
+            "line": r.elev_line_path or "",
+            "area": r.elev_area_path or "",
+        })
+    return JSONResponse({"items": items})
 
 
 @app.get("/importar", response_class=HTMLResponse)
