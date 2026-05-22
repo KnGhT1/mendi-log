@@ -1451,10 +1451,11 @@ tbody tr:hover .row-detail-link { opacity: 1; }
 .route-name-link {
   color: var(--text);
   font-weight: 500;
-  text-decoration: none;
-  transition: color 0.15s;
 }
-.route-name-link:hover { color: var(--accent); }
+tr.recent-route-row {
+  cursor: pointer;
+}
+tr.recent-route-row:hover td { background: var(--surface-2); }
 .table-footer {
   padding: 14px 20px;
   border-top: 1px solid var(--border);

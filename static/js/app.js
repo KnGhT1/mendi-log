@@ -699,6 +699,10 @@
       initMap();
       renderMonthlyChart();
       initRotation();
+      // Filas clickables: navegar al detalle al hacer click en cualquier celda
+      document.querySelectorAll("tr.recent-route-row").forEach(tr => {
+        tr.addEventListener("click", () => { window.location.href = tr.dataset.href; });
+      });
       // Convertir fechas de la tabla a hora local del navegador
       document.querySelectorAll("td[data-iso]").forEach(td => {
         const iso = td.dataset.iso;
