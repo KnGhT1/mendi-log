@@ -685,10 +685,15 @@
     function schedule(q) { clearTimeout(debounceTimer); debounceTimer = setTimeout(() => fetchItems(q), 250); }
     input.addEventListener("focus", () => { open(); fetchItems(input.value); });
     input.addEventListener("input", () => { open(); schedule(input.value); });
+    function setActive(idx) {
+      const visible = $$(".ana-combo-item", list);
+      visible.forEach((el, i) => el.classList.toggle("is-active", i === idx));
+      if (visible[idx]) visible[idx].scrollIntoView({ block: "nearest" });
+    }
     input.addEventListener("keydown", (e) => {
       const visible = $$(".ana-combo-item", list);
-      if (e.key === "ArrowDown") { e.preventDefault(); activeIdx = Math.min(visible.length - 1, activeIdx + 1); }
-      else if (e.key === "ArrowUp") { e.preventDefault(); activeIdx = Math.max(0, activeIdx - 1); }
+      if (e.key === "ArrowDown") { e.preventDefault(); activeIdx = Math.min(visible.length - 1, activeIdx + 1); setActive(activeIdx); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); activeIdx = Math.max(0, activeIdx - 1); setActive(activeIdx); }
       else if (e.key === "Enter") {
         e.preventDefault();
         const target = visible[activeIdx] || visible[0];
