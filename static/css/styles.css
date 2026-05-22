@@ -1448,6 +1448,29 @@ tbody tr:hover .row-actions { opacity: 1; }
 }
 tbody tr:hover .row-detail-link { opacity: 1; }
 .row-detail-link:hover { color: var(--accent); background: var(--surface-2); }
+.route-name-link {
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.route-name-link:hover { color: var(--accent); }
+.table-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  text-align: right;
+}
+.table-footer-link {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.table-footer-link:hover { color: var(--accent); }
 .row-actions button {
   background: transparent;
   border: 1px solid var(--border-2);

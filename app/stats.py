@@ -22,6 +22,14 @@ from app.format import (
 from app.models import Route
 from app.text_utils import canonical_geo
 
+_VALID_LEVELS = frozenset({"easy", "moderate", "hard", "very-hard"})
+
+
+def _coerce_aware(dt: datetime) -> datetime:
+    """Garantiza datetime UTC-aware (SQLite devuelve naive)."""
+    from datetime import UTC
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
 # Circunferencia ecuatorial de la Tierra en km, para el % "vuelta al mundo".
 WORLD_CIRCUMFERENCE_KM = 40075.0
 
@@ -388,9 +396,17 @@ def build_resumen(db: Session, user_id: int) -> ResumenData:
         label = f"{MONTH_LABELS_ES[m-1]} {str(y)[2:]}"
         monthly.append(MonthlyPoint(label=label, value=round(km_by_ym.get((y, m), 0.0), 2)))
 
-    # ----- Tabla ultimas rutas (max 8) ----- query acotada con LIMIT 8.
+    # ----- Tabla ultimas rutas (max 8) ----- proyección parcial: solo las
+    # columnas que RouteRow necesita; evita transferir notes, tags, gpx_*,
+    # route_cluster_id y otras columnas anchas que no se usan aquí.
     recent_rows = (
-        db.query(Route)
+        db.query(
+            Route.id, Route.name, Route.region, Route.sub_region,
+            Route.started_at, Route.distance_km, Route.elevation_gain_m,
+            Route.moving_time_s, Route.difficulty_score, Route.difficulty_level,
+            Route.min_altitude_m, Route.max_altitude_m,
+            Route.elev_line_path, Route.elev_area_path,
+        )
         .filter(Route.user_id == user_id)
         .order_by(Route.started_at.desc())
         .limit(8)
@@ -402,12 +418,12 @@ def build_resumen(db: Session, user_id: int) -> ResumenData:
             name=r.name,
             sub=_location_subtitle(r.region, r.sub_region),
             date_str=_fmt_date_es(r.started_at),
-            started_at_iso=r.started_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            started_at_iso=_coerce_aware(r.started_at).strftime("%Y-%m-%dT%H:%M:%SZ"),
             distance_str=f"{_fmt_km(r.distance_km)} km",
             gain_str=f"{_fmt_int(r.elevation_gain_m)} m",
             moving_str=_fmt_duration(r.moving_time_s),
             score=r.difficulty_score,
-            level=r.difficulty_level,
+            level=r.difficulty_level if r.difficulty_level in _VALID_LEVELS else "moderate",
             score_str=f"{r.difficulty_score:.1f}".replace(".", ","),
             ele_min=int(r.min_altitude_m or 0),
             ele_max=int(r.max_altitude_m or 0),
