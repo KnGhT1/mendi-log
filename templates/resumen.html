@@ -158,18 +158,13 @@ mendi.log · resumen · {{ data.hero.route_count }} ruta{{ '' if data.hero.route
             <th style="text-align:right;">Desnivel+</th>
             <th style="text-align:right;">Movimiento</th>
             <th>Dificultad</th>
-            <th></th>
           </tr>
         </thead>
         <tbody>
           {% for r in data.recent_routes %}
-          <tr>
+          <tr class="recent-route-row" data-href="/rutas/{{ r.id }}">
             <td class="name">
-              <input class="editable-name" type="text"
-                     value="{{ r.name }}"
-                     data-original="{{ r.name }}"
-                     data-route-id="{{ r.id }}"
-                     spellcheck="false">
+              <span class="route-name-link">{{ r.name }}</span>
               {% if r.sub %}<span class="sub">{{ r.sub }}</span>{% endif %}
             </td>
             <td data-iso="{{ r.started_at_iso }}">{{ r.date_str }}</td>
@@ -192,15 +187,13 @@ mendi.log · resumen · {{ data.hero.route_count }} ruta{{ '' if data.hero.route
             <td class="num" style="text-align:right;">{{ r.gain_str }}</td>
             <td class="num" style="text-align:right;">{{ r.moving_str }}</td>
             <td><span class="tag {{ r.level }}">● {{ r.score_str }} · {{ r.level | difficulty_label_es }}</span></td>
-            <td style="text-align:right;">
-              <a href="/rutas/{{ r.id }}" class="row-detail-link" title="Ver detalle">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="16" height="16"><path d="M5 12h14M12 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </a>
-            </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
+      <div class="table-footer">
+        <a href="/rutas" class="table-footer-link">Ver todas las rutas &rarr;</a>
+      </div>
     </div>
   </section>
 

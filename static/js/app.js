@@ -631,46 +631,6 @@
     });
   }
 
-  // ============ Edición inline del nombre ============
-  /**
-   * Activa la edición inline de nombres de ruta en la tabla de la vista
-   * Resumen. Por cada `.editable-name` envía un PATCH a
-   * `/rutas/{id}/renombrar` al perder el foco si el valor cambió.
-   * Usa `input.__mendiBound` para evitar dobles bindings tras swaps.
-   */
-  function initInlineEdit() {
-    document.querySelectorAll(".editable-name").forEach(input => {
-      // Evita re-binding si ya estamos enganchados (no debería pasar tras
-      // swap, pero protegemos contra dobles inits).
-      if (input.__mendiBound) return;
-      input.__mendiBound = true;
-      input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") { e.preventDefault(); input.blur(); }
-        if (e.key === "Escape") {
-          input.value = input.dataset.original || input.value;
-          input.blur();
-        }
-      });
-      input.addEventListener("blur", async () => {
-        const id = input.dataset.routeId;
-        const newName = input.value.trim();
-        if (!id || !newName || newName === input.dataset.original) return;
-        const fd = new FormData();
-        fd.append("new_name", newName);
-        try {
-          const res = await fetch(`/rutas/${id}/renombrar`, { method: "POST", body: fd });
-          if (res.ok) {
-            input.dataset.original = newName;
-          } else {
-            input.value = input.dataset.original || input.value;
-          }
-        } catch (err) {
-          input.value = input.dataset.original || input.value;
-        }
-      });
-    });
-  }
-
   // ============ Dropzone (importar) ============
   /**
    * Inicializa la zona de drag & drop de la vista Importar (`#dropzone`):
@@ -739,7 +699,10 @@
       initMap();
       renderMonthlyChart();
       initRotation();
-      initInlineEdit();
+      // Filas clickables: navegar al detalle al hacer click en cualquier celda
+      document.querySelectorAll("tr.recent-route-row").forEach(tr => {
+        tr.addEventListener("click", () => { window.location.href = tr.dataset.href; });
+      });
       // Convertir fechas de la tabla a hora local del navegador
       document.querySelectorAll("td[data-iso]").forEach(td => {
         const iso = td.dataset.iso;
