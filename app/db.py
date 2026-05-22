@@ -68,7 +68,7 @@ def get_session():
         db.close()
 
 
-def commit(db, *, invalidate_analisis: bool = False) -> None:
+def commit(db, *, invalidate_analisis: bool = False, user_id: int | None = None) -> None:
     """Commit + invalidación opcional del cache de análisis.
 
     Vivía en `app/main.py:_commit` y solo lo usaban los handlers HTTP. Lo
@@ -79,12 +79,24 @@ def commit(db, *, invalidate_analisis: bool = False) -> None:
     `invalidate_analisis=True` invalida el cache de la vista análisis (importar,
     renombrar, borrar, reprocesar, backfill). Para escrituras que no afectan a
     agregaciones (cache de clima, geocoder), pasar False.
+
+    `user_id` acota la invalidación al usuario afectado. Si no se proporciona
+    se invalida todo el cache (fallback seguro para contextos sin usuario).
     """
     db.commit()
     if invalidate_analisis:
         # Import perezoso: app.analisis no debe cargarse al inicializar la BD.
         from app.analisis import invalidate_analisis_cache
-        invalidate_analisis_cache()
+        if user_id is not None:
+            invalidate_analisis_cache(user_id)
+        else:
+            # Fallback: sin user_id conocido, limpiar todo el cache.
+            from app.analisis_cache import _CACHE, _CACHE_LOCK
+            with _CACHE_LOCK:
+                n = len(_CACHE)
+                _CACHE.clear()
+            if n:
+                logger.warning("[analisis] cache cleared completo (sin user_id) (%d entradas)", n)
 
 
 def _ensure_user_columns() -> None:
