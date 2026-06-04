@@ -142,14 +142,23 @@
     </div>
     <aside class="ana-zones" id="ana-zones">
       <div class="ana-zones-head">zonas frecuentes</div>
+      <div class="ana-zones-list">
       {% for z in data.zones %}
       <div class="ana-zone-row">
         <span class="ana-zone-dot {{ z.css_class }}"></span>
-        <span class="ana-zone-name">{{ z.name }}</span>
-        <span class="ana-zone-count">{{ z.count }}</span>
-        <span class="ana-zone-pct">{{ z.pct }}%</span>
+        <div class="ana-zone-body">
+          <div class="ana-zone-top">
+            <span class="ana-zone-name">{{ z.name }}</span>
+            <span class="ana-zone-km">{{ z.km | fmt_km_short }} km</span>
+          </div>
+          <div class="ana-zone-bar-wrap">
+            <div class="ana-zone-bar" style="width:{{ z.bar_pct }}%"></div>
+          </div>
+          <div class="ana-zone-meta">{{ z.count }} sal · {{ z.pct }}%</div>
+        </div>
       </div>
       {% endfor %}
+      </div>
     </aside>
   </div>
 </section>

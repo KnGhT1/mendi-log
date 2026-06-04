@@ -70,7 +70,9 @@ class HeatPoint:
 class ZoneItem:
     name: str
     count: int
+    km: float
     pct: int
+    bar_pct: int   # 0-100 relativo a la zona con más km
     css_class: str  # heat-1 .. heat-4
 
 
@@ -525,18 +527,23 @@ def build_analisis(
 
     # ----- ZONAS (heatmap leyenda lateral) -----
     region_counter: Counter = Counter()
+    region_km: Dict[str, float] = defaultdict(float)
     region_labels: Dict[str, str] = {}
     for r in routes:
         key = _region_key(r.region)
         region_counter[key] += 1
+        region_km[key] += r.distance_km
         lbl = _region_label(r.region, r.sub_region)
         if key not in region_labels or len(lbl) > len(region_labels[key]):
             region_labels[key] = lbl
 
-    region_max = max(region_counter.values()) if region_counter else 1
+    # Ordenar por km acumulados (consistente con el peso del heatmap)
+    top_zones = sorted(region_km.items(), key=lambda x: -x[1])[:20]
+    zone_max_km = top_zones[0][1] if top_zones else 1.0
     zones: List[ZoneItem] = []
-    for key, cnt in region_counter.most_common(8):
-        ratio = cnt / region_max if region_max else 0.0
+    for key, km_val in top_zones:
+        cnt = region_counter[key]
+        ratio = km_val / zone_max_km if zone_max_km else 0.0
         if ratio > 0.75:
             css = "heat-4"
         elif ratio > 0.50:
@@ -548,7 +555,11 @@ def build_analisis(
         pct = int(round((cnt / total_sessions) * 100)) if total_sessions else 0
         zones.append(ZoneItem(
             name=region_labels.get(key, key),
-            count=cnt, pct=pct, css_class=css,
+            count=cnt,
+            km=round(km_val, 1),
+            pct=pct,
+            bar_pct=int(round(ratio * 100)),
+            css_class=css,
         ))
 
     # ----- A · RATIO repetidas vs nuevas -----

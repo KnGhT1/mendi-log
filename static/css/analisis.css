@@ -295,7 +295,7 @@
   isolation: isolate;
 }
 .ana-heatmap {
-  width: 100%; height: 460px; background: var(--surface-2, #11151a);
+  width: 100%; height: 94%; background: var(--surface-2, #11151a);
   min-height: 260px;
 }
 .ana-heatmap-legend {
@@ -311,26 +311,66 @@
 .ana-zones {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 14px; padding: 16px 18px;
+  height: 460px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .ana-zones-head {
   font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em;
   text-transform: uppercase; color: var(--text-dim);
   margin-bottom: 10px;
+  flex-shrink: 0;
 }
+.ana-zones-list {
+  overflow-y: auto;
+  flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-2, var(--border)) transparent;
+  padding-right: 4px;
+}
+.ana-zones-list::-webkit-scrollbar { width: 6px; }
+.ana-zones-list::-webkit-scrollbar-track { background: transparent; }
+.ana-zones-list::-webkit-scrollbar-thumb { background: var(--border-2, var(--border)); border-radius: 3px; }
 .ana-zone-row {
-  display: grid; grid-template-columns: 14px 1fr auto auto;
-  gap: 10px; align-items: center;
-  padding: 8px 0; border-bottom: 1px dashed var(--border);
+  display: grid; grid-template-columns: 14px 1fr;
+  gap: 10px; align-items: start;
+  padding: 10px 0; border-bottom: 1px dashed var(--border);
 }
 .ana-zone-row:last-child { border-bottom: none; }
-.ana-zone-dot { width: 10px; height: 10px; border-radius: 3px; }
+.ana-zone-dot { width: 10px; height: 10px; border-radius: 3px; margin-top: 3px; }
 .ana-zone-dot.heat-1 { background: var(--heat-cell-1); }
 .ana-zone-dot.heat-2 { background: var(--heat-cell-2); }
 .ana-zone-dot.heat-3 { background: var(--heat-cell-3); }
 .ana-zone-dot.heat-4 { background: var(--heat-cell-4); }
-.ana-zone-name { font-size: 13px; }
-.ana-zone-count { font-family: var(--font-mono); font-size: 13px; color: var(--text); }
-.ana-zone-pct   { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+.ana-zone-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ana-zone-top {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+}
+.ana-zone-name {
+  font-size: 13px; color: var(--text);
+  white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.ana-zone-km {
+  font-family: var(--font-mono); font-size: 12px;
+  color: var(--text); white-space: nowrap; flex-shrink: 0;
+}
+.ana-zone-bar-wrap {
+  height: 4px; border-radius: 2px;
+  background: rgba(255,255,255,0.06);
+  overflow: hidden;
+}
+[data-theme="light"] .ana-zone-bar-wrap { background: rgba(0,0,0,0.06); }
+.ana-zone-bar {
+  height: 100%;
+  background: linear-gradient(to right, var(--accent), var(--accent-warm));
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+.ana-zone-meta {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-dim);
+}
 
 /* ===================== 02 · PATRONES ===================== */
 .ana-patterns {
