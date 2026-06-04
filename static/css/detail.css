@@ -233,6 +233,7 @@ html[data-theme="light"] {
   height: 420px;
   overflow: hidden;
   min-width: 0;
+  isolation: isolate;
 }
 /* Perfil integrado bajo el mapa */
 .elev-card--inline {

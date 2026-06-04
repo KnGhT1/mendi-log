@@ -292,6 +292,7 @@
 .ana-heatmap-wrap {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 14px; overflow: hidden; position: relative;
+  isolation: isolate;
 }
 .ana-heatmap {
   width: 100%; height: 460px; background: var(--surface-2, #11151a);
