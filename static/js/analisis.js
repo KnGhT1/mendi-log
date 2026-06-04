@@ -683,7 +683,7 @@
       } catch (_) { list.innerHTML = `<div class="ana-combo-empty">error al buscar</div>`; }
     }
     function schedule(q) { clearTimeout(debounceTimer); debounceTimer = setTimeout(() => fetchItems(q), 250); }
-    input.addEventListener("focus", () => { open(); fetchItems(input.value); });
+    input.addEventListener("focus", () => { open(); fetchItems(""); input.select(); });
     input.addEventListener("input", () => { open(); schedule(input.value); });
     function setActive(idx) {
       const visible = $$(".ana-combo-item", list);
