@@ -228,15 +228,22 @@
     heatMap.createPane("labelsPane").style.zIndex = "450";
 
     darkTiles = L.tileLayer(
-      "https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png",
-      { attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18 }
+      "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+      { attribution: "\u00a9 OpenStreetMap, \u00a9 CartoDB", maxZoom: 18 }
     );
     lightTiles = L.tileLayer(
-      "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
-      { attribution: "© OpenStreetMap, © CartoDB", maxZoom: 18 }
+      "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+      { attribution: "\u00a9 OpenStreetMap, \u00a9 CartoDB", maxZoom: 18 }
     );
 
     updateHeatTiles();
+
+    // Selector de capas compartido con resumen/rutas
+    if (window.MENDI_MAP && typeof window.MENDI_MAP.addLayerControl === "function") {
+      const layerCtrl = window.MENDI_MAP.addLayerControl(heatMap);
+      window.MENDI_TEARDOWN.push(() => { try { layerCtrl.remove(); } catch (_) {} });
+    }
+
     requestAnimationFrame(() => { try { heatMap && heatMap.invalidateSize(); } catch (_) {} });
 
     window.MENDI_TEARDOWN.push(() => {
@@ -262,7 +269,7 @@
         heatLayer = L.heatLayer(points, {
           radius: 22,
           blur: 14,
-          max: Math.max(6, maxW),
+          max: maxW,
           minOpacity: 0.45,
           gradient: {
             0.15: "#7DAFC9",

@@ -498,21 +498,20 @@ def build_analisis(
     ]
 
     # ----- MAPA DE CALOR -----
-    heat_buckets: Dict[Tuple[int, int], int] = defaultdict(int)
+    heat_buckets: Dict[Tuple[int, int], float] = defaultdict(float)
     for r in routes:
         # Celda de ~550m: precision ×200 (antes ×100 ≈ 1.1km, demasiado
-        # difuso). Las repeticiones de un mismo trailhead se siguen
-        # acumulando en el mismo punto pero los focos vecinos quedan
-        # bien separados visualmente.
+        # difuso). El peso es km acumulados por celda — refleja volumen
+        # real de actividad, no solo frecuencia de visita.
         cell = (round(r.start_lat * 200), round(r.start_lon * 200))
-        heat_buckets[cell] += 1
+        heat_buckets[cell] += r.distance_km
 
     heat_points: List[HeatPoint] = []
-    for (lat200, lon200), count in heat_buckets.items():
+    for (lat200, lon200), weight_km in heat_buckets.items():
         heat_points.append(HeatPoint(
             lat=lat200 / 200.0,
             lon=lon200 / 200.0,
-            weight=count,
+            weight=round(weight_km, 1),
         ))
 
     # centro del mapa: media ponderada
