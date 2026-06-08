@@ -221,7 +221,7 @@
         <div class="marker-pin {{ m.kind }}">
           {% if m.kind == 'start' %}A
           {% elif m.kind == 'summit' %}▲
-          {% else %}A{% endif %}
+          {% else %}B{% endif %}
         </div>
         <div class="marker-info">
           <div class="name">{{ m.name }}</div>
@@ -578,7 +578,7 @@
         <span class="pill {{ r.level }}">● {{ r.score_str }}</span>
       </div>
       <div class="related-mini">
-        <svg viewBox="0 0 800 280" preserveAspectRatio="none">
+        <svg viewBox="0 0 800 200" preserveAspectRatio="none">
           {% if r.area %}<path d="{{ r.area }}" fill="rgba(181,209,122,0.15)"/>{% endif %}
           {% if r.line %}<path d="{{ r.line }}" fill="none" stroke="var(--{{ r.level }})" stroke-width="1.4"/>{% endif %}
         </svg>

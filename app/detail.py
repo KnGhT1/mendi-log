@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import List, Optional, Tuple
 
-from sqlalchemy import asc, func
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import Route, Summit, TrackPoint
@@ -845,7 +845,7 @@ def _route_neighbors(db: Session, user_id: int, route: Route) -> Tuple[Optional[
     nxt = (
         db.query(Route)
         .filter(Route.user_id == user_id, Route.started_at > route.started_at)
-        .order_by(asc(Route.started_at))
+        .order_by(Route.started_at.asc())
         .first()
     )
     return prev, nxt
@@ -853,7 +853,6 @@ def _route_neighbors(db: Session, user_id: int, route: Route) -> Tuple[Optional[
 
 def _ruta_number(db: Session, user_id: int, route: Route) -> int:
     """#01 = la mas antigua. Devuelve la posicion 1-based acotada al usuario."""
-    from sqlalchemy import func
     return int(
         db.query(func.count(Route.id))
         .filter(Route.user_id == user_id, Route.started_at <= route.started_at)
