@@ -241,6 +241,7 @@
 
       } catch (err) {
         hideMapLoading();
+        console.warn("[detail] track fetch failed:", err);
       }
     }
 
@@ -301,7 +302,17 @@
      * Intercambia las capas de teselas del mapa de detalle según el tema
      * activo (`dark` / `light`), incluyendo las capas de etiquetas.
      */
-    function updateMapTiles() {}
+    function updateMapTiles() {
+      if (!detailMap || !window.MENDI_MAP) return;
+      // Sincronizar capa base con el tema activo reutilizando la lógica
+      // compartida de MENDI_MAP (igual que resumen y análisis).
+      const { layers, active } = window.MENDI_MAP.buildMapLayers();
+      const saved = (() => { try { return localStorage.getItem(window.MENDI_MAP.STORAGE_MAP_LAYER) || active; } catch (_) { return active; } })();
+      const layer = layers[saved] || layers[active];
+      // Reemplazar todas las capas tile existentes por la nueva
+      detailMap.eachLayer((l) => { if (l instanceof L.TileLayer) detailMap.removeLayer(l); });
+      layer.addTo(detailMap);
+    }
 
     function _csrfHeaders(extra) {
       const meta = document.querySelector('meta[name="csrf-token"]');
@@ -483,10 +494,6 @@
       } catch (_) {}
     };
 
-    function initAddSummitMode() {
-      // El control se crea en _buildMap una vez que el mapa existe
-    }
-
     function _bindMapClickForSummit() {
       if (!detailMap || !D.canEdit) return;
 
@@ -626,7 +633,7 @@
         const px = (s.x / 800) * rect.width + (rect.left - wrapRect.left);
         const py = (s.y / 280) * rect.height + (rect.top - wrapRect.top);
         // Mostrar arriba si hay espacio, abajo si no
-        const tooltipH = tooltip.offsetHeight || 90;
+        const tooltipH = tooltip.getBoundingClientRect().height || 90;
         const above = py - tooltipH - 10 >= 0;
         tooltip.style.left = px + "px";
         tooltip.style.top = above
@@ -1115,7 +1122,7 @@
         try {
           const res = await fetch(`/api/rutas/${ROUTE_ID}/notas`, {
             method: "PATCH",
-            headers: { "Content-Type": "application/json" },
+            headers: _csrfHeaders(),
             body: JSON.stringify({ notes: newText, tags: newTags }),
           });
           if (!res.ok) throw new Error("save failed");
@@ -1253,7 +1260,10 @@
       confirm.addEventListener("click", async () => {
         confirm.disabled = true;
         try {
-          const res = await fetch(`/api/rutas/${ROUTE_ID}`, { method: "DELETE" });
+          const res = await fetch(`/api/rutas/${ROUTE_ID}`, {
+            method: "DELETE",
+            headers: _csrfHeaders(),
+          });
           if (!res.ok) throw new Error("delete failed");
           window.location.href = "/rutas";
         } catch (err) {
@@ -1284,13 +1294,12 @@
     }
 
     // ============ ARRANQUE ============
-    // initElevHover se llama desde _fetchTrack una vez lleguen los samples
+    // initAddSummitMode se elimina: el control se crea directamente en _bindMapClickForSummit
     initMap();
     initWeather();
     initNotes();
     initRenameModal();
     initDeleteModal();
-    initAddSummitMode();
     initThemeObserver();
   }
 
