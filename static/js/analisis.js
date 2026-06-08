@@ -236,12 +236,14 @@
       { attribution: "\u00a9 OpenStreetMap, \u00a9 CartoDB", maxZoom: 18 }
     );
 
-    updateHeatTiles();
-
-    // Selector de capas compartido con resumen/rutas
+    // El selector de capas gestiona las teselas base — no llamamos a
+    // updateHeatTiles() en el init para evitar duplicar capas activas.
     if (window.MENDI_MAP && typeof window.MENDI_MAP.addLayerControl === "function") {
       const layerCtrl = window.MENDI_MAP.addLayerControl(heatMap);
       window.MENDI_TEARDOWN.push(() => { try { layerCtrl.remove(); } catch (_) {} });
+    } else {
+      // Fallback si MENDI_MAP no está disponible
+      updateHeatTiles();
     }
 
     requestAnimationFrame(() => { try { heatMap && heatMap.invalidateSize(); } catch (_) {} });
@@ -430,112 +432,6 @@
       if (i % 3 === 0) html += `<text x="${x}" y="${H - 6}" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" fill="${cDim}">${p.label}</text>`;
     });
     svg.innerHTML = html;
-  }
-
-  // ============================================================
-  //  07 · CALENDARIO HEATMAP (reagrupado por día local)
-  // ============================================================
-  /**
-   * Renderiza el heatmap de calendario (`#ana-calendar-wrap`). Reagrupa
-   * los km de `payload.kmByDay` (días UTC del servidor) a días locales
-   * del navegador antes de pintar. Muestra hasta 24 meses en orden
-   * descendente por año, con niveles de color por km diario.
-   */
-  function renderCalendar() {
-    const wrap = document.getElementById("ana-calendar");
-    if (!wrap || !payload || !payload.kmByDay) return;
-
-    const { fmtDateLocal, localDateKey } = window.MENDI_UTIL || {};
-    if (!localDateKey) return;
-
-    // Reagrupar km por día local (el servidor manda días UTC)
-    const kmByLocalDay = {};
-    (payload.kmByDay || []).forEach(({ iso, km }) => {
-      // iso es "YYYY-MM-DD" UTC; convertimos a día local añadiendo T00:00:00Z
-      const key = localDateKey(iso + "T12:00:00Z"); // mediodía UTC → mismo día en UTC±2
-      kmByLocalDay[key] = (kmByLocalDay[key] || 0) + km;
-    });
-
-    if (!Object.keys(kmByLocalDay).length) return;
-
-    const MONTH_ES = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
-
-    // Rango de meses a mostrar (igual que el backend: cal_start → cal_end)
-    const allDays = Object.keys(kmByLocalDay).sort();
-    const firstDay = new Date(allDays[0] + "T12:00:00");
-    const lastDay  = new Date(allDays[allDays.length - 1] + "T12:00:00");
-
-    // Limitar a 24 meses si el rango es muy grande
-    const maxStart = new Date(lastDay);
-    maxStart.setMonth(maxStart.getMonth() - 23);
-    const calStart = firstDay < maxStart ? maxStart : firstDay;
-    const calEnd   = lastDay;
-
-    // Construir meses
-    const monthsByYear = {};
-    let cur = new Date(calStart.getFullYear(), calStart.getMonth(), 1);
-    const endYM = [calEnd.getFullYear(), calEnd.getMonth()];
-
-    while (cur.getFullYear() < endYM[0] ||
-           (cur.getFullYear() === endYM[0] && cur.getMonth() <= endYM[1])) {
-      const y = cur.getFullYear();
-      const m = cur.getMonth();
-      const lastOfMonth = new Date(y, m + 1, 0);
-      const firstWeekday = cur.getDay() === 0 ? 6 : cur.getDay() - 1; // lunes=0
-
-      const weeks = [];
-      let week = Array(firstWeekday).fill(null);
-      let d = new Date(cur);
-      while (d <= lastOfMonth) {
-        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-        const v = kmByLocalDay[key] || 0;
-        let level = "";
-        if (v > 18) level = "lvl4";
-        else if (v > 12) level = "lvl3";
-        else if (v > 6)  level = "lvl2";
-        else if (v > 0)  level = "lvl1";
-        const dateLabel = fmtDateLocal ? fmtDateLocal(key + "T12:00:00Z") : key;
-        const title = v > 0
-          ? `${dateLabel} · ${v.toFixed(2).replace(".",",")} km`
-          : `${dateLabel} · sin actividad`;
-        week.push({ d: String(d.getDate()).padStart(2,"0"), v, level, title });
-        if (week.length === 7) { weeks.push(week); week = []; }
-        d.setDate(d.getDate() + 1);
-      }
-      if (week.length) {
-        while (week.length < 7) week.push(null);
-        weeks.push(week);
-      }
-
-      if (!monthsByYear[y]) monthsByYear[y] = [];
-      monthsByYear[y].push({ label: MONTH_ES[m], weeks });
-
-      cur.setMonth(cur.getMonth() + 1);
-    }
-
-    // Renderizar HTML
-    const years = Object.keys(monthsByYear).map(Number).sort((a,b) => b - a);
-    let html = "";
-    years.forEach(y => {
-      html += `<div class="ana-cal-year"><div class="ana-cal-year-label">${y}</div><div class="ana-cal-months">`;
-      monthsByYear[y].forEach(({ label, weeks }) => {
-        html += `<div class="ana-cal-month"><div class="ana-cal-month-label">${label}</div><div class="ana-cal-weeks">`;
-        weeks.forEach(week => {
-          html += `<div class="ana-cal-week">`;
-          week.forEach(cell => {
-            if (!cell) {
-              html += `<div class="cal-cell"></div>`;
-            } else {
-              html += `<div class="cal-cell ${cell.level}" title="${escapeHtml(cell.title)}"></div>`;
-            }
-          });
-          html += `</div>`;
-        });
-        html += `</div></div>`;
-      });
-      html += `</div></div>`;
-    });
-    wrap.innerHTML = html;
   }
 
   // ============================================================
@@ -853,7 +749,7 @@
     svg.insertAdjacentHTML("beforeend",
       `<text x="14" y="${PAD_T + innerH/2}" text-anchor="middle" transform="rotate(-90 14 ${PAD_T + innerH/2})" font-family="IBM Plex Mono" font-size="9" fill="${cDim}" letter-spacing="0.1em">ALTITUD m</text>`);
 
-    function paintRoute(pts, color, refKm) {
+    function paintRoute(pts, color, refKm, side) {
       if (!pts.length) return;
       const projected = pts.map(p => project(p, refKm));
       let line = "";
@@ -861,7 +757,7 @@
       let area = `M ${projected[0][0].toFixed(1)} ${PAD_T + innerH} `;
       projected.forEach(([x, y]) => { area += `L ${x.toFixed(1)} ${y.toFixed(1)} `; });
       area += `L ${projected[projected.length - 1][0].toFixed(1)} ${PAD_T + innerH} Z`;
-      const gid = `cmp-grad-${Math.random().toString(36).slice(2, 6)}`;
+      const gid = side === "A" ? "cmp-grad-A" : "cmp-grad-B";
       svg.insertAdjacentHTML("beforeend",
         `<defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stop-color="${color}" stop-opacity="0.30"/>
@@ -872,8 +768,8 @@
         `<path d="${line}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`);
     }
 
-    paintRoute(ptsA, colorA, maxKmA);
-    paintRoute(ptsB, colorB, maxKmB);
+    paintRoute(ptsA, colorA, maxKmA, "A");
+    paintRoute(ptsB, colorB, maxKmB, "B");
 
     // Eje X label
     const midLabel = normalized ? "50%" : `${fmtKm(maxKm / 2)} km`;
@@ -1115,7 +1011,6 @@
     const accentHist = cssVar("--accent-cool") || "#7DAFC9"; // años históricos
     const textDim  = cssVar("--text-dim") || "#888";
     const border   = cssVar("--border")   || "#333";
-    const surface2 = cssVar("--surface-2") || "rgba(255,255,255,0.04)";
 
     const xOf = i => padL + (i / (data.length - 1)) * innerW;
     const yOf = v => padT + innerH - (v / maxKm) * innerH;
