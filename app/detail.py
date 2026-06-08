@@ -77,6 +77,7 @@ class HeroData:
     time_str: str              # "2h 08m"
     pace_str: str              # "16:46"
     max_alt_str: str           # "1.121"
+    slope_avg_str: str         # "8,4 %"  (m+ / km × 100)
 
 
 @dataclass
@@ -581,7 +582,7 @@ def _fatigue_score(distance_km: float, gain_m: int) -> Tuple[float, str]:
     return round(score, 1), level
 
 
-def _build_hero(db: Session, user_id: int, route: Route) -> HeroData:
+def _build_hero(db: Session, user_id: int, route: Route, slope_avg_pct: float) -> HeroData:
     """Construye el dataclass HeroData con los datos del encabezado de detalle."""
     number = _ruta_number(db, user_id, route)
     return HeroData(
@@ -600,6 +601,7 @@ def _build_hero(db: Session, user_id: int, route: Route) -> HeroData:
         time_str=_fmt_duration(route.moving_time_s or 0),
         pace_str=_fmt_pace_min((route.moving_time_s or 0) / route.distance_km if route.distance_km > 0 else 0),
         max_alt_str=_fmt_int(route.max_altitude_m or 0),
+        slope_avg_str=f"{_fmt_pct(slope_avg_pct)} %",
     )
 
 
@@ -970,7 +972,7 @@ def build_detail(db: Session, user_id: int, route_id: int) -> Optional[DetailDat
         id=route.id,
         name=route.name,
         name_original=route.name_original,
-        hero=_build_hero(db, user_id, route),
+        hero=_build_hero(db, user_id, route, slope_avg_pct),
         map=_build_map(route, points, milestones),
         elev_strip=elev_strip,
         elev=elev,

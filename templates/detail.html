@@ -101,9 +101,9 @@
         <div class="l">altitud máx.</div>
         <div class="v tnum">{{ data.hero.max_alt_str }}<span class="u">m</span></div>
       </div>
-      <div class="hero-stat score">
-        <div class="l">dificultad</div>
-        <div class="v tnum">{{ data.hero.score_str }}<span class="u">/10</span></div>
+      <div class="hero-stat">
+        <div class="l">% desnivel</div>
+        <div class="v tnum">{{ data.hero.slope_avg_str }}</div>
       </div>
     </div>
   </div>
@@ -256,15 +256,12 @@
   </div>
 
   <div class="tech-grid">
+
+    {# Bloque 1: Distancias y tiempo #}
     <div class="tech-cell">
-      <div class="l">distancia 2D</div>
+      <div class="l">distancia</div>
       <div class="v">{{ data.tech.distance_2d_str }}<span class="u">km</span></div>
-      <div class="sub">proyección en plano</div>
-    </div>
-    <div class="tech-cell">
-      <div class="l">distancia 3D</div>
-      <div class="v">{{ data.tech.distance_3d_str }}<span class="u">km</span></div>
-      <div class="sub">incluye desnivel</div>
+      <div class="sub">3D: {{ data.tech.distance_3d_str }} km</div>
     </div>
     <div class="tech-cell">
       <div class="l">tiempo total</div>
@@ -276,49 +273,40 @@
       <div class="v">{{ data.tech.moving_time_str }}</div>
       <div class="sub">{{ data.tech.stop_time_str }}</div>
     </div>
+    <div class="tech-cell">
+      <div class="l">vam medio</div>
+      <div class="v">{{ data.tech.vam_str }}{% if data.tech.vam_str != '—' %}<span class="u">m/h</span>{% endif %}</div>
+      <div class="sub">velocidad ascensional media</div>
+    </div>
 
+    {# Bloque 2: Ritmos #}
     <div class="tech-cell">
       <div class="l">ritmo medio</div>
       <div class="v">{{ data.tech.pace_avg }}<span class="u">/km</span></div>
       <div class="sub">{{ data.tech.pace_avg_kmh }} km/h</div>
     </div>
     <div class="tech-cell">
-      <div class="l">ritmo (subida)</div>
+      <div class="l">ritmo subida</div>
       <div class="v">{{ data.tech.pace_up }}{% if data.tech.pace_up != '—' %}<span class="u">/km</span>{% endif %}</div>
       <div class="sub">{{ data.tech.pace_up_kmh }} km/h en ascenso</div>
     </div>
     <div class="tech-cell">
-      <div class="l">ritmo (bajada)</div>
+      <div class="l">ritmo bajada</div>
       <div class="v">{{ data.tech.pace_down }}{% if data.tech.pace_down != '—' %}<span class="u">/km</span>{% endif %}</div>
       <div class="sub">{{ data.tech.pace_down_kmh }} km/h en descenso</div>
     </div>
     <div class="tech-cell">
-      <div class="l">vam medio</div>
-      <div class="v">{{ data.tech.vam_str }}{% if data.tech.vam_str != '—' %}<span class="u">m/h</span>{% endif %}</div>
-      <div class="sub">subiendo</div>
-    </div>
-
-    <div class="tech-cell">
-      <div class="l">desnivel +</div>
-      <div class="v">{{ data.tech.gain_str }}<span class="u">m</span></div>
-      <div class="sub">acumulado en ascenso</div>
-    </div>
-    <div class="tech-cell">
-      <div class="l">desnivel −</div>
-      <div class="v">{{ data.tech.loss_str }}<span class="u">m</span></div>
-      <div class="sub">acumulado en descenso</div>
-    </div>
-    <div class="tech-cell">
-      <div class="l">altitud min · máx</div>
+      <div class="l">altítud min · máx</div>
       <div class="v">{{ data.tech.alt_range_str }}<span class="u">m</span></div>
       <div class="sub">{{ data.tech.alt_range_diff_str }}</div>
     </div>
+
+    {# Bloque 3: Desnivel y pendiente #}
     <div class="tech-cell">
       <div class="l">pendiente avg · máx</div>
       <div class="v">{{ data.tech.slope_avg_str }} — {{ data.tech.slope_max_str }}<span class="u">%</span></div>
       <div class="sub">{{ data.tech.hardest_sector_label }}</div>
     </div>
-
     <div class="tech-cell">
       <div class="l">índice de fatiga</div>
       <div class="v" style="color: var(--{{ data.tech.fatigue_level }});">{{ data.tech.fatigue_str }}<span class="u">/10</span></div>
