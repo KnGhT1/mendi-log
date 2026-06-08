@@ -121,24 +121,6 @@
   opacity: .7;
 }
 
-/* ===================== EVOLUCIÓN EN HERO ===================== */
-.ana-evo-card-hero {
-  margin-top: 20px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px 18px;
-  position: relative;
-  z-index: 1;
-}
-.ana-evo-legend-meta {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-dim);
-  opacity: .7;
-}
-
 /* ===================== TOP-10 CON SCROLL ===================== */
 .ana-top10-wrap {
   max-height: 350px;

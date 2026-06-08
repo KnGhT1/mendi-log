@@ -22,9 +22,7 @@ from app.clustering import (
     SAME_ROUTE_TRAILHEAD_M,
     group_by_cluster,
 )
-from app.models import Route, TrackPoint
-
-logger = logging.getLogger(__name__)
+from app.models import Route
 from app.stats import (
     MONTH_LABELS_ES,
     _difficulty_label_es,
@@ -37,6 +35,8 @@ from app.stats import (
     _region_key,
     _region_label,
 )
+
+logger = logging.getLogger(__name__)
 
 MIN_ROUTES_FOR_ANALYSIS = 3
 TOP_REPEATED_LIMIT = 10
@@ -552,7 +552,7 @@ def build_analisis(
             css = "heat-2"
         else:
             css = "heat-1"
-        pct = int(round((cnt / total_sessions) * 100)) if total_sessions else 0
+        pct = int(round((km_val / sum(region_km.values())) * 100)) if region_km else 0
         zones.append(ZoneItem(
             name=region_labels.get(key, key),
             count=cnt,
@@ -749,7 +749,6 @@ def build_analisis(
     # ----- 03 · EVOLUCIÓN MENSUAL (km por mes, enero-diciembre, año actual vs histórico) -----
     # Eje fijo: enero a diciembre del año actual
     months_12: List[Tuple[int, int]] = [(today.year, m) for m in range(1, 13)]
-    months_14 = months_12  # alias para compatibilidad con el resto del bloque
     sessions_per_month: Dict[Tuple[int, int], int] = defaultdict(int)
     unique_per_month: Dict[Tuple[int, int], set] = defaultdict(set)
     km_per_month: Dict[Tuple[int, int], float] = defaultdict(float)
@@ -759,14 +758,13 @@ def build_analisis(
             sessions_per_month[ym] += 1
             unique_per_month[ym].add(k)
             km_per_month[ym] += r.distance_km
-    monthly_max_km = max((km_per_month.get(ym, 0.0) for ym in months_14), default=1.0) or 1.0
     monthly_max = max(
-        max((sessions_per_month.get(ym, 0) for ym in months_14), default=0),
-        max((len(unique_per_month.get(ym, set())) for ym in months_14), default=0),
+        max((sessions_per_month.get(ym, 0) for ym in months_12), default=0),
+        max((len(unique_per_month.get(ym, set())) for ym in months_12), default=0),
         1,
     )
     monthly: List[MonthBar] = []
-    for y, m in months_14:
+    for y, m in months_12:
         s = sessions_per_month.get((y, m), 0)
         u = len(unique_per_month.get((y, m), set()))
         km = round(km_per_month.get((y, m), 0.0), 1)
