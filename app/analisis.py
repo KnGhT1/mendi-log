@@ -235,6 +235,7 @@ class AnalisisData:
     comparator_routes: List[ComparatorRoute]
     total_sessions: int
     total_unique_routes: int
+    top_has_repeated: bool  # False cuando el top-10 muestra por distancia (sin repetidas)
 
 
 # ============= helpers =============
@@ -422,6 +423,7 @@ def _empty_analisis(range_key: str) -> AnalisisData:
         km_by_month_hist=[0.0] * 12,
         comparator_routes=[],
         total_sessions=0, total_unique_routes=0,
+        top_has_repeated=False,
     )
 
 
@@ -599,8 +601,18 @@ def build_analisis(
             cursor -= timedelta(weeks=1)
         else:
             break
-    # best
-    sorted_weeks = sorted(weeks_with_activity)
+    # best — calcula sobre el histórico GLOBAL, no sobre el rango filtrado,
+    # para que la mejor racha sea siempre el récord real del usuario.
+    all_routes_streak = (
+        db.query(Route.started_at)
+        .filter(Route.user_id == user_id)
+        .all()
+    )
+    weeks_all = {
+        (r.started_at.isocalendar()[0], r.started_at.isocalendar()[1])
+        for r in all_routes_streak
+    }
+    sorted_weeks = sorted(weeks_all)
     streak_best = 0
     run = 0
     prev: Optional[Tuple[int, int]] = None
@@ -695,6 +707,7 @@ def build_analisis(
         ((k, v) for k, v in by_key.items() if len(v) > 1),
         key=lambda kv: (-len(kv[1]), -sum(r.distance_km for r in kv[1])),
     )[:TOP_REPEATED_LIMIT]
+    _top_has_repeated = bool(top_candidates)
     if not top_candidates:
         # si no hay repetidas, mostrar las top por distancia acumulada
         top_candidates = sorted(
@@ -1071,6 +1084,7 @@ def build_analisis(
         comparator_routes=comparator_routes,
         total_sessions=total_sessions,
         total_unique_routes=unique_count,
+        top_has_repeated=_top_has_repeated,
     )
 
 
