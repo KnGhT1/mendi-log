@@ -98,6 +98,7 @@
     {% endif %}
 
     {% if current_user and current_user.role == "admin" %}
+    <div class="nav-section">Administración</div>
     <a href="/admin/usuarios" class="nav-item {% if active_nav == 'admin-usuarios' %}active{% endif %}">
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Usuarios
@@ -105,8 +106,11 @@
     {% endif %}
 
     <div class="sidebar-footer">
-      v0.1 · 100% local<br>
-      <span style="color:var(--accent);">●</span> SQLite OK
+      {% if current_user %}
+      <span class="sidebar-footer-user" title="{{ current_user.email }}">{{ current_user.display_name or current_user.email }}</span>
+      <span class="role-chip role-{{ current_user.role }}">{{ current_user.role }}</span>
+      {% endif %}
+      <span class="sidebar-footer-version">v0.1 &middot; 100% local</span>
     </div>
   </aside>
 
