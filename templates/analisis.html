@@ -221,7 +221,7 @@
     {# C · top10 #}
     <article class="ana-card ana-card-top">
       <div class="ana-card-eyebrow">C · ranking</div>
-      <h3>tus rutas más repetidas</h3>
+      <h3>{% if data.top_has_repeated %}tus rutas más repetidas{% else %}tus rutas más largas{% endif %}</h3>
       <div class="ana-top10-wrap">
         <ol class="ana-top10" id="ana-top10">
           {% for t in data.top_routes %}
@@ -283,7 +283,7 @@
       <div class="ana-card-eyebrow">F · hábito</div>
       <h3>por día de semana</h3>
       <svg id="ana-chart-weekday" style="width:100%; height:90px; display:block;"></svg>
-      <div class="ana-disc-foot">histórico · km acumulados por día</div>
+      <div class="ana-disc-foot">histórico completo · km acumulados por día</div>
     </article>
 
     {# H · estacionalidad #}
@@ -291,7 +291,7 @@
       <div class="ana-card-eyebrow">H · estacionalidad</div>
       <h3>km por mes del año</h3>
       <svg id="ana-chart-seasonality" style="width:100%; height:90px; display:block;"></svg>
-      <div class="ana-disc-foot">histórico · todos los años acumulados</div>
+      <div class="ana-disc-foot">histórico completo · independiente del filtro de rango</div>
     </article>
   </div>
 </section>

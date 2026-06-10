@@ -330,6 +330,7 @@
     };
     let html = "";
     payload.ratio.forEach(p => {
+      if (p.value === 0) return; // guard: omitir segmentos vacíos
       const angle = (p.value / total) * Math.PI * 2;
       const a0 = acc, a1 = acc + angle;
       acc = a1;
@@ -365,33 +366,28 @@
     const W = 240, H = 60, PAD = 6;
     const data = payload.streak.spark || [];
     if (!data.length) return;
-    const max = Math.max(1, ...data.map(p => p.value));
-    const xStep = (W - PAD * 2) / (data.length - 1 || 1);
+    // El sparkline muestra presencia semanal (activo/inactivo), no volumen.
+    // Convertimos a binario: 1 si hubo actividad esa semana, 0 si no.
+    const binary = data.map(p => (p.value > 0 ? 1 : 0));
+    const max = 1;
+    const xStep = (W - PAD * 2) / (binary.length - 1 || 1);
     const cAccent = cssVar("--accent");
     const cWarm = cssVar("--accent-warm");
+    const cDim = cssVar("--text-dim");
 
-    let pathLine = "", pathArea = "";
-    data.forEach((p, i) => {
+    // Pintar barras en lugar de línea para presencia/ausencia
+    let html = "";
+    const barW = Math.max(2, xStep * 0.6);
+    binary.forEach((v, i) => {
       const x = PAD + i * xStep;
-      const y = H - PAD - (p.value / max) * (H - PAD * 2);
-      pathLine += (i === 0 ? "M" : "L") + ` ${x.toFixed(1)} ${y.toFixed(1)} `;
-      if (i === 0) pathArea = `M ${x} ${H - PAD} L ${x} ${y} `;
-      else pathArea += `L ${x} ${y} `;
+      const isLast = i === binary.length - 1;
+      const color = isLast ? cWarm : cAccent;
+      const barH = v > 0 ? (H - PAD * 2) : 4;
+      const y = H - PAD - barH;
+      const opacity = v > 0 ? (isLast ? 0.9 : 0.55) : 0.15;
+      html += `<rect x="${(x - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="${color}" fill-opacity="${opacity}"/>`;
     });
-    pathArea += `L ${PAD + (data.length - 1) * xStep} ${H - PAD} Z`;
-
-    const gradId = "spark-grad-" + Math.random().toString(36).slice(2, 7);
-    const last = data[data.length - 1];
-    const lx = PAD + (data.length - 1) * xStep;
-    const ly = H - PAD - (last.value / max) * (H - PAD * 2);
-    svg.innerHTML =
-      `<defs><linearGradient id="${gradId}" x1="0" x2="0" y1="0" y2="1">
-        <stop offset="0%" stop-color="${cAccent}" stop-opacity="0.45"/>
-        <stop offset="100%" stop-color="${cAccent}" stop-opacity="0"/>
-      </linearGradient></defs>` +
-      `<path d="${pathArea}" fill="url(#${gradId})"/>` +
-      `<path d="${pathLine}" fill="none" stroke="${cAccent}" stroke-width="1.6" stroke-linejoin="round"/>` +
-      `<circle cx="${lx}" cy="${ly}" r="3" fill="${cWarm}"/>`;
+    svg.innerHTML = html;
   }
 
   // ============================================================
@@ -411,6 +407,14 @@
     const data = payload.discovery;
     if (!data.length) return;
     const max = Math.max(1, ...data.map(p => p.value));
+
+    // Estado vacío: todos los valores son 0
+    if (max === 0 || data.every(p => p.value === 0)) {
+      const cDim = cssVar("--text-dim");
+      svg.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="${cDim}">sin rutas nuevas en este período</text>`;
+      return;
+    }
+
     const xStep = (W - PAD_X * 2) / (data.length - 1 || 1);
     const cCool = cssVar("--accent-cool") || "#7DAFC9";
     const cDim = cssVar("--text-dim");
@@ -1144,7 +1148,7 @@
       const cx = PAD_X + slotW * i + slotW / 2;
       const barH = Math.max(2, (v / maxV) * innerH);
       const y = PAD_T + innerH - barH;
-      const isMax = v === maxV;
+      const isMax = v === maxV && v > 0;
       const color = isMax ? cWarm : cAccent;
       html += `<rect x="${(cx - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="${color}" fill-opacity="${isMax ? 0.9 : 0.55}"/>`;
       html += `<text x="${cx.toFixed(1)}" y="${H - 4}" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" fill="${cDim}">${labels[i]}</text>`;
@@ -1182,7 +1186,7 @@
       const cx = PAD_X + slotW * i + slotW / 2;
       const barH = Math.max(2, (v / maxV) * innerH);
       const y = PAD_T + innerH - barH;
-      const isMax = v === maxV;
+      const isMax = v === maxV && v > 0;
       const color = isMax ? cWarm : cCool;
       html += `<rect x="${(cx - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="${color}" fill-opacity="${isMax ? 0.9 : 0.55}"/>`;
       html += `<text x="${cx.toFixed(1)}" y="${H - 4}" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" fill="${cDim}">${labels[i]}</text>`;
