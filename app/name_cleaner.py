@@ -76,7 +76,7 @@ def _load_region_keywords() -> dict[str, tuple[str, str | None]]:
         with _REGIONS_PATH.open("r", encoding="utf-8") as f:
             blob = json.load(f)
     except (OSError, json.JSONDecodeError) as exc:
-        logger.warning(
+        logger.debug(
             "name_cleaner: %s ilegible (%s); usando fallback embebido",
             _REGIONS_PATH.name, exc.__class__.__name__,
         )

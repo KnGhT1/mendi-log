@@ -99,7 +99,7 @@ La base de datos arranca **vacía** y sin usuarios. Para crear el primer
 usuario y poder entrar a la app:
 
 ```bash
-python scripts/create_user.py --email tu@correo.es
+python scripts/create_user.py --email tu@correo.es  --role admin
 ```
 
 El script pedirá la contraseña por consola (sin eco), la hashea con
