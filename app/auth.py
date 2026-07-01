@@ -76,9 +76,9 @@ def revoke_session(db: Session, token: str) -> None:
         db.commit()
 
 
-def set_session_cookie(response: Response, token: str, *, remember: bool) -> None:
+def set_session_cookie(response: Response, token: str, *, remember: bool, request: Request) -> None:
     max_age = (SESSION_DAYS_REMEMBER if remember else SESSION_DAYS) * 24 * 3600
-    secure = os.environ.get("MENDI_REQUIRE_HTTPS") == "1"
+    secure = request.url.scheme == "https" or os.environ.get("MENDI_REQUIRE_HTTPS") == "1"
     response.set_cookie(
         key=SESSION_COOKIE,
         value=token,

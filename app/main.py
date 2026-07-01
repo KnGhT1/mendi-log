@@ -331,7 +331,7 @@ def login_submit(
     user.last_login_at = datetime.now(UTC)
     db.commit()
     response = RedirectResponse("/", status_code=303)
-    set_session_cookie(response, token, remember=bool(remember))
+    set_session_cookie(response, token, remember=bool(remember), request=request)
     return response
 
 

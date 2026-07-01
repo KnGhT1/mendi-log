@@ -387,15 +387,24 @@
           html += `<input id="summit-name-${summit.id}" type="text" value="${escapeHtml(name)}" maxlength="60"
             style="flex:1;background:var(--surface-2);border:1px solid var(--border-2);color:var(--text);
             font-family:var(--mono);font-size:11px;padding:3px 6px;border-radius:4px;outline:none;">`;
-          html += `<button onclick="window._saveSummitName(${summit.id})" style="background:var(--accent);color:var(--bg);border:none;padding:3px 8px;border-radius:4px;font-family:var(--mono);font-size:10px;cursor:pointer;">ok</button>`;
-          html += `<button onclick="window._deleteSummit(${summit.id})" style="background:var(--danger);color:#fff;border:none;padding:3px 8px;border-radius:4px;font-family:var(--mono);font-size:10px;cursor:pointer;">x</button>`;
+          html += `<button data-action="save-summit" style="background:var(--accent);color:var(--bg);border:none;padding:3px 8px;border-radius:4px;font-family:var(--mono);font-size:10px;cursor:pointer;">ok</button>`;
+          html += `<button data-action="delete-summit" style="background:var(--danger);color:#fff;border:none;padding:3px 8px;border-radius:4px;font-family:var(--mono);font-size:10px;cursor:pointer;">x</button>`;
           html += `</div>`;
         }
         html += `</div>`;
         return html;
       };
       marker.bindPopup(popupContent(), { maxWidth: 260 });
-      marker.on("popupopen", () => marker.setPopupContent(popupContent()));
+      marker.on("popupopen", () => {
+        marker.setPopupContent(popupContent());
+        const popup = marker.getPopup().getElement();
+        if (popup && D.canEdit) {
+          const btnSave = popup.querySelector('[data-action="save-summit"]');
+          const btnDel = popup.querySelector('[data-action="delete-summit"]');
+          if (btnSave) btnSave.addEventListener("click", () => window._saveSummitName(summit.id));
+          if (btnDel) btnDel.addEventListener("click", () => window._deleteSummit(summit.id));
+        }
+      });
 
       if (D.canEdit) {
         marker.on("dragend", async (e) => {
@@ -432,13 +441,19 @@
         // Repintar marcadores en el perfil SVG
         const marksGroup = document.getElementById("summit-marks");
         if (marksGroup) {
-          marksGroup.innerHTML = (json.summits || []).map((s) =>
-            `<g class="summit-mark" data-summit-id="${s.id}" transform="translate(${Math.round(s.x)}, ${Math.round(s.y)})">
+          marksGroup.innerHTML = (json.summits || []).map((s) => {
+            const summitId = parseInt(s.id, 10);
+            if (!Number.isFinite(summitId) || summitId <= 0) return "";
+            const x = Math.round(s.x);
+            const y = Math.round(s.y);
+            const label = escapeHtml(s.name || "Cima");
+            const alt = escapeHtml(s.alt_str);
+            return `<g class="summit-mark" data-summit-id="${summitId}" transform="translate(${x}, ${y})">
               <line x1="0" y1="0" x2="0" y2="14" stroke="var(--accent-warm)" stroke-width="1" stroke-dasharray="2 2"/>
               <circle cx="0" cy="0" r="4" fill="var(--accent-warm)" stroke="var(--bg)" stroke-width="2"/>
-              <text x="6" y="-4" font-family="IBM Plex Mono" font-size="10" fill="var(--accent-warm)" letter-spacing="0.05em" transform="rotate(45, 6, -4)">▲ ${s.name || "Cima"} · ${s.alt_str} m</text>
-            </g>`
-          ).join("");
+              <text x="6" y="-4" font-family="IBM Plex Mono" font-size="10" fill="var(--accent-warm)" letter-spacing="0.05em" transform="rotate(45, 6, -4)">&#9650; ${label} · ${alt} m</text>
+            </g>`;
+          }).join("");
         }
 
         // Repintar hitos del sidebar

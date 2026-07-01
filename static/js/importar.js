@@ -283,6 +283,11 @@
       .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
   }
 
+  function safeRouteId(id) {
+    const n = parseInt(id, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
   function renderReport(rep) {
     if (!rep || !rep.groups || !rep.groups.length) {
       results.innerHTML = `<div style="font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--text-dim); padding:14px 0;">
@@ -297,24 +302,30 @@
         ${rep.groups.length} grupo(s) · ${total} ruta(s) duplicada(s) a eliminar
         ${rep.missing ? ` · ${rep.missing} ruta(s) sin GPX ignorada(s)` : ""}
       </div>`;
-    const groups = rep.groups.map(g => `
+    const groups = rep.groups.map(g => {
+      const keepId = safeRouteId(g.keep.id);
+      if (!keepId) return "";
+      const removeItems = g.remove.map(r => {
+        const removeId = safeRouteId(r.id);
+        if (!removeId) return "";
+        return `
+            <li>
+              <span class="dup-tag dup-tag-remove">eliminar</span>
+              <a href="/rutas/${removeId}">${escapeHtml(r.name)}</a>
+              <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; opacity:.6;">#${removeId}</span>
+            </li>`;
+      }).join("");
+      return `
       <div class="dup-group">
         <div class="dup-group-hash">hash · ${escapeHtml(g.hash)}</div>
         <div class="dup-group-keep">
           <span class="dup-tag dup-tag-keep">se conserva</span>
-          <a href="/rutas/${g.keep.id}">${escapeHtml(g.keep.name)}</a>
-          <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; opacity:.6;">#${g.keep.id}</span>
+          <a href="/rutas/${keepId}">${escapeHtml(g.keep.name)}</a>
+          <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; opacity:.6;">#${keepId}</span>
         </div>
-        <ul class="dup-group-remove">
-          ${g.remove.map(r => `
-            <li>
-              <span class="dup-tag dup-tag-remove">eliminar</span>
-              <a href="/rutas/${r.id}">${escapeHtml(r.name)}</a>
-              <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; opacity:.6;">#${r.id}</span>
-            </li>`).join("")}
-        </ul>
-      </div>
-    `).join("");
+        <ul class="dup-group-remove">${removeItems}</ul>
+      </div>`;
+    }).join("");
     results.innerHTML = head + groups;
     cleanBtn.disabled = false;
   }
