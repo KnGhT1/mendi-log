@@ -110,7 +110,7 @@
       <span class="sidebar-footer-user" title="{{ current_user.email }}">{{ current_user.display_name or current_user.email }}</span>
       <span class="role-chip role-{{ current_user.role }}">{{ current_user.role }}</span>
       {% endif %}
-      <span class="sidebar-footer-version">v{{ app_version }} &middot; 100% local</span>
+      <span class="sidebar-footer-version">v{{ app_version }}</span>
     </div>
   </aside>
 
@@ -159,7 +159,7 @@
     {% block content %}{% endblock %}
 
     <div class="footnote">
-      <span>{% block footnote_text %}mendi.log · 100% local{% endblock %}</span>
+      <span>{% block footnote_text %}mendi.log{% endblock %}</span>
       <span class="demo-badge">v{{ app_version }}</span>
     </div>
   </main>

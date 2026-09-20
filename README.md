@@ -1,7 +1,7 @@
 # mendi.log
 
-Aplicación web local para llevar un registro de tus rutas de montaña a partir
-de archivos GPX (Wikiloc, Strava, etc.). 100 % local, 100 % tuyo.
+Aplicación web para llevar un registro de tus rutas de montaña a partir
+de archivos GPX (Wikiloc, Strava, etc.). Tus rutas, bajo tu control.
 
 Stack: FastAPI + SQLite + Jinja2 + HTMX + Leaflet, sin build de frontend.
 Paleta nocturna con acentos verde-musgo, tipografías Fraunces + IBM Plex
