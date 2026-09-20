@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import os
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -16,6 +17,8 @@ from sqlalchemy.orm import Session
 
 from app.db import get_session
 from app.models import User, UserSession
+
+logger = logging.getLogger(__name__)
 
 # Argon2id con parámetros recomendados por OWASP 2024.
 _hasher = PasswordHasher(time_cost=3, memory_cost=64 * 1024, parallelism=4)
@@ -164,10 +167,24 @@ def _unauthenticated(request: Request) -> HTTPException:
 
 # ===== CSRF =====
 
+_SECRET_FALLBACK_WARNED = False
+
+
 def _secret_key() -> bytes:
-    """Devuelve la clave secreta para HMAC. Loguea warning si usa default."""
+    """Devuelve la clave secreta para HMAC. Loguea warning si usa default.
+
+    El aviso se emite una sola vez por proceso: esta función se llama en
+    cada render (_ctx) y sin guarda inundaría los logs.
+    """
+    global _SECRET_FALLBACK_WARNED
     raw = os.environ.get("MENDI_SECRET_KEY")
     if not raw:
+        if not _SECRET_FALLBACK_WARNED:
+            logger.warning(
+                "MENDI_SECRET_KEY no definida: usando clave de desarrollo, "
+                "no apta fuera de local."
+            )
+            _SECRET_FALLBACK_WARNED = True
         return b"dev-only-change-me-please-32-chars-minimum-length-x"
     return raw.encode("utf-8")
 

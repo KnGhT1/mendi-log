@@ -62,7 +62,7 @@ autohospedadas, mapa Leaflet y siluetas de elevación en el hero.
   cualquier escritura (importar, renombrar, borrar, reprocesar, backfill).
 - **Autenticación multiusuario** con sesiones server-side (Argon2id +
   cookies HttpOnly), CSRF mediante HMAC-SHA256 y rate limiting en `/login`
-  (5 fallos / 15 min por IP). Pool cerrado: alta de usuarios con
+  (ventana de 15 min por IP). Pool cerrado: alta de usuarios con
   `scripts/create_user.py`. Cada usuario solo ve y modifica sus rutas.
   Restablecer la contraseña revoca todas las sesiones del usuario.
 - **Mantenimiento** vía endpoints autenticados (streaming NDJSON salvo el
@@ -168,8 +168,8 @@ con `pytest tests/test_css_audit.py`, no como CLI.
   peticiones HTMX y `fetch()` no-GET (los formularios usan campo oculto
   `csrf_token`). Verificación con `hmac.compare_digest`. Todas las
   mutaciones lo exigen, incluido `POST /logout`.
-- **Rate limiting** en `/login`: 5 fallos por IP en una ventana de
-  15 minutos (contador en memoria, suficiente para `--workers 1`); los
+- **Rate limiting** en `/login`: ventana de 15 minutos por IP
+  (contador en memoria, suficiente para `--workers 1`); los
   logins correctos limpian el contador.
 - Las cookies expiran a los 30 días (90 si marcas "recordarme").
 - Cierre de sesión vía `POST /logout` (con CSRF): revoca la sesión en BD y
@@ -301,7 +301,7 @@ de `base.html`) o campo `csrf_token` en formularios.
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/login` | Página de inicio de sesión |
-| POST | `/login` | Crea sesión y cookie (rate-limited 5 fallos/15 min) |
+| POST | `/login` | Crea sesión y cookie (rate-limited por IP) |
 | POST | `/logout` | Revoca la sesión y borra la cookie (con CSRF) |
 | GET | `/static/*` | Recursos estáticos (CSS, JS, fuentes, vendor) |
 
