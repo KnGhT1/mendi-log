@@ -4,13 +4,14 @@ El agrupamiento de sesiones en "rutas únicas" se hace ahora con la columna
 materializada `route_cluster_id` (ver `app.clustering`). Aquí solo agregamos
 y formateamos. Los umbrales y la lógica de similitud viven en clustering.py.
 """
+import json
 import logging
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from sqlalchemy import and_, extract, func, or_
+from sqlalchemy import extract, func
 from sqlalchemy.orm import Session
 
 from app.analisis_cache import (
@@ -40,6 +41,16 @@ logger = logging.getLogger(__name__)
 
 MIN_ROUTES_FOR_ANALYSIS = 3
 TOP_REPEATED_LIMIT = 10
+
+
+def _local_date_of(started_at, tzname=None) -> date:
+    """Fecha local de un naive UTC en la zona de la ruta (Fase 2).
+
+    Acepta el par suelto para servir también a Rows ligeras sin el modelo
+    completo. Sin zona o sin dato: día UTC (comportamiento histórico).
+    """
+    from app.tz import local_date
+    return local_date(started_at, tzname) or started_at.date()
 
 
 # ============= dataclasses =============
@@ -113,7 +124,7 @@ class TopRouteRow:
     total_km: float
     bar_pct: int   # 0-100 relativo al máximo
     last_date_str: str
-    last_date_iso: str   # UTC ISO para conversión TZ en cliente
+    last_date_iso: str   # día local YYYY-MM-DD (fecha de la ruta en su zona)
     days_since: int
     avg_gain: int          # desnivel + medio por sesión
     score: float           # dificultad media
@@ -165,7 +176,11 @@ class RecordCard:
 @dataclass
 class CalendarMonth:
     label: str
-    weeks: List[List[Dict]]
+    # Forma dual histórica: el calendario anual usa matriz List[List[Dict]]
+    # (semanas × días) pero el mini global guarda una sola celda-resumen
+    # [{"level":..., "title":..., "v":...}] por mes. No unificar sin tocar
+    # el template (usa `cm.weeks[0].*`) y `/api/analisis`.
+    weeks: List
     # Cada celda: {"d": "01", "v": 2.4, "level": "lvl3", "title": "..."}
 
 
@@ -173,31 +188,6 @@ class CalendarMonth:
 class CalendarYear:
     year: int
     months: List[CalendarMonth]
-
-
-@dataclass
-class ComparatorRoute:
-    key: str           # route.id (sesión individual)
-    name: str
-    origin: str
-    date_str: str      # fecha de la sesión
-    date_iso: str      # ISO para ordenar
-    km: float
-    ref_km: float
-    gain: int          # desnivel +
-    loss: int          # desnivel -
-    gain_pct: float    # m+ / km
-    loss_pct: float    # m- / km
-    score: float
-    level: str
-    level_label: str
-    duration: str
-    pace: str
-    ele_min: int
-    ele_max: int
-    line: str
-    area: str
-    cluster_name: str  # nombre del cluster (ruta única) para agrupar en el combo
 
 
 @dataclass
@@ -218,7 +208,7 @@ class AnalisisData:
     top_routes: List[TopRouteRow]
     monthly: List[MonthBar]
     monthly_max: int
-    monthly_prev_year: Dict[int, List[float]]  # {año: [km mes 1..14]} para todos los años históricos
+    monthly_prev_year: Dict[int, List[float]]  # {año: [km mes 1..12]} para años históricos
     donut_difficulty: List[DonutPart]
     donut_difficulty_total: int
     donut_distance: List[DonutPart]
@@ -229,10 +219,9 @@ class AnalisisData:
     records: List[RecordCard]
     calendar: List[CalendarYear]
     calendar_mini: List[CalendarYear]  # histórico global por (año, mes), independiente del filtro
-    km_by_day: List[Dict]          # [{"iso": "YYYY-MM-DD", "km": float}] UTC
+    km_by_day: List[Dict]          # [{"iso": "YYYY-MM-DD", "km": float}] fecha local
     km_by_weekday: List[float]     # [lun, mar, mie, jue, vie, sab, dom]
     km_by_month_hist: List[float]  # [ene, feb, ..., dic] historico total
-    comparator_routes: List[ComparatorRoute]
     total_sessions: int
     total_unique_routes: int
     top_has_repeated: bool  # False cuando el top-10 muestra por distancia (sin repetidas)
@@ -331,6 +320,24 @@ def _build_chips(selected: str) -> List[HeroRangeChip]:
     return chips
 
 
+def _in_season(d: date, season_key: str) -> bool:
+    """True si la fecha (YA LOCAL) cae en la estación astronómica.
+
+    Misma tabla `SEASONS` que el filtro SQL antiguo, pero evaluada sobre
+    el día local de cada ruta (Fase 2).
+    """
+    (sm, sd), (em, ed), _ = SEASONS[season_key]
+    m, day = d.month, d.day
+    if season_key == "winter":
+        # Invierno cruza el año: 22 dic+ o ene/feb o hasta 19 mar.
+        return (m == 12 and day >= sd) or m in (1, 2) or (m == 3 and day <= ed)
+    if m == sm:
+        return day >= sd
+    if m == em:
+        return day <= ed
+    return sm < m < em
+
+
 def _filter_routes(
     db: Session,
     user_id: int,
@@ -338,8 +345,10 @@ def _filter_routes(
     end: Optional[date],
     season_key: Optional[str] = None,
 ) -> List[Route]:
-    """Devuelve rutas del usuario ordenadas por fecha dentro del rango [start, end].
+    """Rutas del usuario en el rango [start, end] por fecha LOCAL (Fase 2).
 
+    En SQL es imposible filtrar por zona (varía por ruta): se ensancha ±1
+    día (rango) o a meses candidatos (temporada) y se post-filtra en Python.
     Si `season_key` está presente, ignora start/end y filtra por todos los
     años del histórico que caigan en esa estación astronómica.
     """
@@ -348,49 +357,26 @@ def _filter_routes(
     if season_key and season_key in SEASONS:
         (sm, sd), (em, ed), _ = SEASONS[season_key]
         if season_key == "winter":
-            # Invierno cruza el año: (mes >= 12 AND dia >= 22) OR (mes <= 3 AND dia <= 19)
-            qry = qry.filter(or_(
-                and_(
-                    extract("month", Route.started_at) == 12,
-                    extract("day", Route.started_at) >= sd,
-                ),
-                and_(
-                    extract("month", Route.started_at) == 1,
-                ),
-                and_(
-                    extract("month", Route.started_at) == 2,
-                ),
-                and_(
-                    extract("month", Route.started_at) == 3,
-                    extract("day", Route.started_at) <= ed,
-                ),
-            ))
+            months = (11, 12, 1, 2, 3, 4)
         else:
-            # Estaciones que no cruzan el año
-            qry = qry.filter(or_(
-                # mes de inicio: solo días >= sd
-                and_(
-                    extract("month", Route.started_at) == sm,
-                    extract("day", Route.started_at) >= sd,
-                ),
-                # meses intermedios completos
-                *[
-                    extract("month", Route.started_at) == m
-                    for m in range(sm + 1, em)
-                ],
-                # mes de fin: solo días <= ed
-                and_(
-                    extract("month", Route.started_at) == em,
-                    extract("day", Route.started_at) <= ed,
-                ),
-            ))
-    else:
-        if start:
-            qry = qry.filter(Route.started_at >= datetime.combine(start, datetime.min.time()))
-        if end:
-            qry = qry.filter(Route.started_at <= datetime.combine(end, datetime.max.time()))
+            months = tuple(m for m in range(sm - 1, em + 2) if 1 <= m <= 12)
+        qry = qry.filter(extract("month", Route.started_at).in_(months))
+        rows = qry.order_by(Route.started_at.asc()).all()
+        return [
+            r for r in rows
+            if _in_season(_local_date_of(r.started_at, getattr(r, "timezone", None)), season_key)
+        ]
 
-    return qry.order_by(Route.started_at.asc()).all()
+    if start:
+        qry = qry.filter(Route.started_at >= datetime.combine(start - timedelta(days=1), datetime.min.time()))
+    if end:
+        qry = qry.filter(Route.started_at <= datetime.combine(end + timedelta(days=1), datetime.max.time()))
+    rows = qry.order_by(Route.started_at.asc()).all()
+    return [
+        r for r in rows
+        if (start is None or _local_date_of(r.started_at, getattr(r, "timezone", None)) >= start)
+        and (end is None or _local_date_of(r.started_at, getattr(r, "timezone", None)) <= end)
+    ]
 
 
 # ============= empty state =============
@@ -421,7 +407,6 @@ def _empty_analisis(range_key: str) -> AnalisisData:
         km_by_day=[],
         km_by_weekday=[0.0] * 7,
         km_by_month_hist=[0.0] * 12,
-        comparator_routes=[],
         total_sessions=0, total_unique_routes=0,
         top_has_repeated=False,
     )
@@ -462,8 +447,8 @@ def build_analisis(
         empty = _empty_analisis(rk_norm)
         empty.range_chips = chips
         empty.range_label = range_label
-        empty.from_date = from_date
-        empty.to_date = to_date
+        empty.from_date = start.isoformat() if rk_norm == "custom" and start else None
+        empty.to_date = end.isoformat() if rk_norm == "custom" and end else None
         return empty
 
     # ----- Agregación por ruta única -----
@@ -518,12 +503,15 @@ def build_analisis(
             weight=round(weight_km, 1),
         ))
 
-    # centro del mapa: media ponderada
+    # centro del mapa: media ponderada (con guarda ante pesos todos cero)
     if heat_points:
         sum_w = sum(p.weight for p in heat_points)
-        cx = sum(p.lat * p.weight for p in heat_points) / sum_w
-        cy = sum(p.lon * p.weight for p in heat_points) / sum_w
-        map_center = (cx, cy)
+        if sum_w > 0:
+            cx = sum(p.lat * p.weight for p in heat_points) / sum_w
+            cy = sum(p.lon * p.weight for p in heat_points) / sum_w
+            map_center = (cx, cy)
+        else:
+            map_center = (42.7, -1.6)
     else:
         map_center = (42.7, -1.6)
 
@@ -542,6 +530,7 @@ def build_analisis(
     # Ordenar por km acumulados (consistente con el peso del heatmap)
     top_zones = sorted(region_km.items(), key=lambda x: -x[1])[:20]
     zone_max_km = top_zones[0][1] if top_zones else 1.0
+    zones_total_km = sum(region_km.values())
     zones: List[ZoneItem] = []
     for key, km_val in top_zones:
         cnt = region_counter[key]
@@ -554,7 +543,7 @@ def build_analisis(
             css = "heat-2"
         else:
             css = "heat-1"
-        pct = int(round((km_val / sum(region_km.values())) * 100)) if region_km else 0
+        pct = int(round((km_val / zones_total_km) * 100)) if zones_total_km > 0 else 0
         zones.append(ZoneItem(
             name=region_labels.get(key, key),
             count=cnt,
@@ -581,37 +570,35 @@ def build_analisis(
             RatioPart("nuevas",    new_sessions,      new_pct, "accent"),
         ]
 
-    # ----- B · STREAK semanas ISO -----
+    # ----- B · STREAK semanas ISO (fecha local, Fase 2) -----
+    # current y best se calculan sobre el histórico GLOBAL, no sobre el
+    # rango filtrado: la "racha activa" no depende del filtro temporal.
     today = _today()
-    weeks_with_activity = {
-        (r.started_at.isocalendar()[0], r.started_at.isocalendar()[1])
-        for r in routes
+    all_routes_streak = (
+        db.query(Route.started_at, Route.timezone)
+        .filter(Route.user_id == user_id)
+        .all()
+    )
+    weeks_all = {
+        _local_date_of(r.started_at, r.timezone).isocalendar()[:2]
+        for r in all_routes_streak
+        if r.started_at
     }
     # current: si la semana en curso aún no tiene actividad, empezamos a
     # contar desde la semana pasada para no romper el streak a mitad de semana.
     streak_current = 0
     cursor = today - timedelta(days=today.weekday())
     this_week = (cursor.isocalendar()[0], cursor.isocalendar()[1])
-    if this_week not in weeks_with_activity:
+    if this_week not in weeks_all:
         cursor -= timedelta(weeks=1)
     while True:
         iso = cursor.isocalendar()
-        if (iso[0], iso[1]) in weeks_with_activity:
+        if (iso[0], iso[1]) in weeks_all:
             streak_current += 1
             cursor -= timedelta(weeks=1)
         else:
             break
-    # best — calcula sobre el histórico GLOBAL, no sobre el rango filtrado,
-    # para que la mejor racha sea siempre el récord real del usuario.
-    all_routes_streak = (
-        db.query(Route.started_at)
-        .filter(Route.user_id == user_id)
-        .all()
-    )
-    weeks_all = {
-        (r.started_at.isocalendar()[0], r.started_at.isocalendar()[1])
-        for r in all_routes_streak
-    }
+    # best — récord real del usuario sobre el mismo conjunto global.
     sorted_weeks = sorted(weeks_all)
     streak_best = 0
     run = 0
@@ -630,10 +617,10 @@ def build_analisis(
         streak_best = max(streak_best, run)
         prev = w
 
-    # spark: ultimas 12 semanas (km por semana)
+    # spark: ultimas 12 semanas (km por semana, fecha local, Fase 2)
     km_by_week: Dict[Tuple[int, int], float] = defaultdict(float)
     for r in routes:
-        iso = r.started_at.isocalendar()
+        iso = _local_date_of(r.started_at, getattr(r, "timezone", None)).isocalendar()
         km_by_week[(iso[0], iso[1])] += r.distance_km
     spark: List[StreakPoint] = []
     spark_cursor = today - timedelta(days=today.weekday())
@@ -659,27 +646,28 @@ def build_analisis(
     )
 
     # ----- G · DESCUBRIMIENTO: nuevas rutas únicas/mes (12m) -----
-    # La primera fecha de cada ruta única se calcula sobre el histórico GLOBAL,
-    # no sobre el rango filtrado: si una ruta se hizo por primera vez en 2022
-    # y también en 2024, no debe aparecer como "nueva" al filtrar por año actual.
-    # Ahora que `route_cluster_id` es estable a nivel BD podemos resolver la
-    # primera fecha por cluster con un GROUP BY plano — sin volver a clusterizar.
-    cluster_keys = [k for k in by_key.keys() if k >= 0]
-    first_date_rows = (
-        db.query(Route.route_cluster_id, func.min(Route.started_at))
+    # La primera fecha de cada ruta única se calcula sobre el histórico GLOBAL
+    # (todas las rutas del usuario), no sobre el rango filtrado: si una ruta
+    # se hizo por primera vez en 2022 y también en 2024, no debe aparecer
+    # como "nueva" al filtrar por año actual. Fecha LOCAL por ruta (Fase 2).
+    global_cluster_dates = (
+        db.query(Route.route_cluster_id, Route.started_at, Route.timezone)
         .filter(Route.user_id == user_id)
-        .filter(Route.route_cluster_id.in_(cluster_keys))
-        .group_by(Route.route_cluster_id)
         .all()
-        if cluster_keys else []
     )
-    first_date_by_key: Dict[int, date] = {
-        cid: dt.date() for cid, dt in first_date_rows if dt
-    }
-    # Fallback para clusters sin id (BD aún no migrada): usamos el min local.
+    first_date_by_key: Dict[int, date] = {}
+    for cid, started_at, tzname in global_cluster_dates:
+        if cid is None or cid < 0 or not started_at:
+            continue
+        d = _local_date_of(started_at, tzname)
+        if cid not in first_date_by_key or d < first_date_by_key[cid]:
+            first_date_by_key[cid] = d
+    # Fallback para clusters sin id (BD aún no migrada): min local del grupo.
     for k, lst in by_key.items():
         if k not in first_date_by_key:
-            first_date_by_key[k] = min(r.started_at.date() for r in lst)
+            first_date_by_key[k] = min(
+                _local_date_of(r.started_at, getattr(r, "timezone", None)) for r in lst
+            )
 
     months_back: List[Tuple[int, int]] = []
     cur = date(today.year, today.month, 1)
@@ -725,13 +713,19 @@ def build_analisis(
         avg_gain_val = int(round(sum((r.elevation_gain_m or 0) for r in lst) / n))
         avg_score = round(sum(float(r.difficulty_score or 0) for r in lst) / n, 1)
         avg_moving = int(round(sum((r.moving_time_s or 0) for r in lst) / n))
-        last_d = max(r.started_at.date() for r in lst)
-        first_d = min(r.started_at.date() for r in lst)
+        last_d = max(_local_date_of(r.started_at, getattr(r, "timezone", None)) for r in lst)
+        first_d = min(_local_date_of(r.started_at, getattr(r, "timezone", None)) for r in lst)
         # tendencia: sesiones en los últimos 365 días vs los 365 anteriores
         cutoff_1y = today - timedelta(days=365)
         cutoff_2y = today - timedelta(days=730)
-        reps_last_year = sum(1 for r in lst if r.started_at.date() >= cutoff_1y)
-        reps_prev_year = sum(1 for r in lst if cutoff_2y <= r.started_at.date() < cutoff_1y)
+        reps_last_year = sum(
+            1 for r in lst
+            if _local_date_of(r.started_at, getattr(r, "timezone", None)) >= cutoff_1y
+        )
+        reps_prev_year = sum(
+            1 for r in lst
+            if cutoff_2y <= _local_date_of(r.started_at, getattr(r, "timezone", None)) < cutoff_1y
+        )
         if reps_last_year > reps_prev_year:
             trend = "up"
         elif reps_last_year < reps_prev_year:
@@ -767,7 +761,8 @@ def build_analisis(
     km_per_month: Dict[Tuple[int, int], float] = defaultdict(float)
     for k, lst in by_key.items():
         for r in lst:
-            ym = (r.started_at.year, r.started_at.month)
+            d = _local_date_of(r.started_at, getattr(r, "timezone", None))
+            ym = (d.year, d.month)
             sessions_per_month[ym] += 1
             unique_per_month[ym].add(k)
             km_per_month[ym] += r.distance_km
@@ -874,8 +869,8 @@ def build_analisis(
         cal_start = start
         cal_end = end
     else:
-        cal_start = min(r.started_at.date() for r in routes)
-        cal_end = max(r.started_at.date() for r in routes)
+        cal_start = min(_local_date_of(r.started_at, getattr(r, "timezone", None)) for r in routes)
+        cal_end = max(_local_date_of(r.started_at, getattr(r, "timezone", None)) for r in routes)
         # limitar a últimos 24 meses si el histórico es muy grande
         max_window = today - timedelta(days=730)
         if cal_start < max_window:
@@ -883,9 +878,9 @@ def build_analisis(
 
     km_by_day: Dict[date, float] = defaultdict(float)
     for r in routes:
-        km_by_day[r.started_at.date()] += r.distance_km
-    # Serializar como lista [{"iso": "YYYY-MM-DD", "km": float}] para que el
-    # cliente reagrupe por día local (UTC+1/+2 en España).
+        km_by_day[_local_date_of(r.started_at, getattr(r, "timezone", None))] += r.distance_km
+    # Serializar como lista [{"iso": "YYYY-MM-DD", "km": float}] en fecha
+    # LOCAL de cada ruta (Fase 2; antes día UTC).
     km_by_day_payload = [
         {"iso": d.isoformat(), "km": round(v, 2)}
         for d, v in km_by_day.items()
@@ -959,7 +954,7 @@ def build_analisis(
 
     # ----- km por dia de semana, estacionalidad y calendario mini (historico global) -----
     all_routes_user = (
-        db.query(Route.started_at, Route.distance_km)
+        db.query(Route.started_at, Route.timezone, Route.distance_km)
         .filter(Route.user_id == user_id)
         .all()
     )
@@ -968,9 +963,10 @@ def build_analisis(
     km_by_ym_all: Dict[Tuple[int, int], float] = defaultdict(float)
     for r in all_routes_user:
         if r.started_at:
-            km_by_weekday[r.started_at.weekday()] += r.distance_km
-            km_by_month_hist[r.started_at.month - 1] += r.distance_km
-            km_by_ym_all[(r.started_at.year, r.started_at.month)] += r.distance_km
+            d = _local_date_of(r.started_at, r.timezone)
+            km_by_weekday[d.weekday()] += r.distance_km
+            km_by_month_hist[d.month - 1] += r.distance_km
+            km_by_ym_all[(d.year, d.month)] += r.distance_km
     km_by_weekday = [round(v, 1) for v in km_by_weekday]
     km_by_month_hist = [round(v, 1) for v in km_by_month_hist]
 
@@ -1015,46 +1011,16 @@ def build_analisis(
     else:
         calendar_mini = []
 
-    # ----- 08 · COMPARADOR (una entrada por sesión individual, ordenadas por fecha desc) -----
-    comparator_routes: List[ComparatorRoute] = []
-    for k, lst in by_key.items():
-        cluster_ref = max(lst, key=lambda r: r.started_at)  # nombre del cluster = sesión más reciente
-        for r in sorted(lst, key=lambda r: r.started_at, reverse=True):
-            km_val = round(float(r.distance_km or 0.0), 1)
-            gain_val = int(r.elevation_gain_m or 0)
-            loss_val = int(r.elevation_loss_m or 0)
-            gain_pct = round(gain_val / km_val, 1) if km_val > 0 else 0.0
-            loss_pct = round(loss_val / km_val, 1) if km_val > 0 else 0.0
-            comparator_routes.append(ComparatorRoute(
-                key=str(r.id),
-                name=r.name,
-                origin=_origin_text(r),
-                date_str=_fmt_date_es(r.started_at),
-                date_iso=r.started_at.strftime("%Y-%m-%d"),
-                km=km_val,
-                ref_km=round(float(r.distance_km or 0.0), 2),
-                gain=gain_val,
-                loss=loss_val,
-                gain_pct=gain_pct,
-                loss_pct=loss_pct,
-                score=round(float(r.difficulty_score or 0.0), 1),
-                level=r.difficulty_level,
-                level_label=_difficulty_label_es(r.difficulty_level),
-                duration=_fmt_duration(r.moving_time_s or 0),
-                pace=_fmt_pace(r.distance_km, r.moving_time_s or 0),
-                ele_min=int(r.min_altitude_m or 0),
-                ele_max=int(r.max_altitude_m or 0),
-                line=r.elev_line_path or "",
-                area=r.elev_area_path or "",
-                cluster_name=cluster_ref.name,
-            ))
-    comparator_routes.sort(key=lambda c: (c.cluster_name.lower(), c.date_iso), reverse=False)
+    # ----- 08 · COMPARADOR -----
+    # (Eliminado: se construía un ComparatorRoute por sesión pero nunca se
+    # serializaba; el cliente usa `GET /api/comparator/search`.)
 
     return AnalisisData(
         has_data=True,
         range_key=rk_norm,
-        from_date=from_date if rk_norm == "custom" else None,
-        to_date=to_date if rk_norm == "custom" else None,
+        # Normalizados al orden ya intercambiado en _resolve_range (from<=to).
+        from_date=start.isoformat() if rk_norm == "custom" and start else None,
+        to_date=end.isoformat() if rk_norm == "custom" and end else None,
         range_label=range_label,
         range_chips=chips,
         hero_stats=hero_stats,
@@ -1081,7 +1047,6 @@ def build_analisis(
         km_by_day=km_by_day_payload,
         km_by_weekday=km_by_weekday,
         km_by_month_hist=km_by_month_hist,
-        comparator_routes=comparator_routes,
         total_sessions=total_sessions,
         total_unique_routes=unique_count,
         top_has_repeated=_top_has_repeated,
@@ -1166,3 +1131,19 @@ def to_json_payload(data: AnalisisData) -> Dict:
         "kmByWeekday": data.km_by_weekday,
         "kmByMonthHist": data.km_by_month_hist,
     }
+
+
+def payload_json_for_script(payload: Dict) -> str:
+    """Serializa el payload para incrustarlo con {{ payload_json|safe }}.
+
+    `json.dumps` no escapa `<`, así que un nombre de ruta tipo `</script>`
+    rompería el bloque `<script type="application/json">` (H1). Escapamos
+    `&<>` a `\\uXXXX` (mismo alfabeto que el filtro `tojson` de Jinja);
+    `JSON.parse` lo revierte sin cambios para el lector (textContent).
+    """
+    return (
+        json.dumps(payload, ensure_ascii=False)
+        .replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+    )

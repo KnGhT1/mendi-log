@@ -39,7 +39,13 @@ def get_analisis_cached(
     Recibimos `build_fn` como parámetro para no introducir un import circular
     con `app.analisis`.
     """
-    key = (int(user_id), range_key or "all", from_date, to_date)
+    # Normalización de clave: `ALL`/`all`/inválido colapsan igual en el build
+    # y `from/to` solo importan en rango custom. Sin esto, la misma vista
+    # ocupaba varias entradas.
+    rk = (range_key or "all").lower()
+    if rk != "custom":
+        from_date, to_date = None, None
+    key = (int(user_id), rk, from_date, to_date)
     with _CACHE_LOCK:
         cached = _CACHE.get(key)
     if cached is not None:

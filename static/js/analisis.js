@@ -115,7 +115,8 @@
    */
   function initRangeChips() {
     const wrap = $(".ana-range");
-    if (!wrap) return;
+    if (!wrap || wrap.dataset.bound) return;
+    wrap.dataset.bound = "1";
 
     wrap.addEventListener("click", (e) => {
       // El <select> de temporada NO debe disparar la navegación al hacer click
@@ -366,26 +367,26 @@
     const W = 240, H = 60, PAD = 6;
     const data = payload.streak.spark || [];
     if (!data.length) return;
-    // El sparkline muestra presencia semanal (activo/inactivo), no volumen.
-    // Convertimos a binario: 1 si hubo actividad esa semana, 0 si no.
-    const binary = data.map(p => (p.value > 0 ? 1 : 0));
-    const max = 1;
-    const xStep = (W - PAD * 2) / (binary.length - 1 || 1);
+    // Barras proporcionales al km semanal (misma historia que last4_avg_km).
+    // Si no hay volumen (todo 0), se muestra presencia mínima.
+    const max = Math.max(0.1, ...data.map(p => p.value || 0));
+    const xStep = (W - PAD * 2) / (data.length - 1 || 1);
     const cAccent = cssVar("--accent");
     const cWarm = cssVar("--accent-warm");
     const cDim = cssVar("--text-dim");
 
-    // Pintar barras en lugar de línea para presencia/ausencia
+    // Pintar barras proporcionales al km (altura mínima si hubo actividad)
     let html = "";
     const barW = Math.max(2, xStep * 0.6);
-    binary.forEach((v, i) => {
+    data.forEach((p, i) => {
+      const v = p.value || 0;
       const x = PAD + i * xStep;
-      const isLast = i === binary.length - 1;
+      const isLast = i === data.length - 1;
       const color = isLast ? cWarm : cAccent;
-      const barH = v > 0 ? (H - PAD * 2) : 4;
+      const barH = v > 0 ? Math.max(6, ((H - PAD * 2) * v) / max) : 4;
       const y = H - PAD - barH;
       const opacity = v > 0 ? (isLast ? 0.9 : 0.55) : 0.15;
-      html += `<rect x="${(x - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="${color}" fill-opacity="${opacity}"/>`;
+      html += `<rect x="${(x - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="${color}" fill-opacity="${opacity}"><title>${escapeHtml(p.label || "")} · ${v} km</title></rect>`;
     });
     svg.innerHTML = html;
   }
@@ -560,6 +561,9 @@
     const input = $(".ana-combo-input", wrap);
     const list = $(".ana-combo-list", wrap);
     let activeIdx = -1, debounceTimer = null;
+    // Cache key→item del último fetch: evita el 2º fetch al elegir (frágil
+    // con nombres duplicados y doble latencia). Fallback al fetch si falta.
+    const itemCache = new Map();
 
     function close() { wrap.classList.remove("is-open"); activeIdx = -1; }
     function open() { wrap.classList.add("is-open"); }
@@ -581,6 +585,7 @@
         const data = await res.json();
         const lc = { easy: "#7DAFC9", moderate: "#B5D17A", hard: "#E8B86D", "very-hard": "#E47862" };
         if (!data.items || !data.items.length) { list.innerHTML = `<div class="ana-combo-empty">sin resultados</div>`; return; }
+        data.items.forEach((it) => itemCache.set(String(it.key), it));
         list.innerHTML = data.items.map((it, i) =>
           `<button type="button" class="ana-combo-item" data-key="${escapeHtml(it.key)}">`+
           `<div>${highlight(it.name, q)}</div>`+
@@ -610,6 +615,13 @@
     list.addEventListener("click", async (e) => {
       const btn = e.target.closest(".ana-combo-item"); if (!btn) return;
       const key = btn.dataset.key;
+      const cached = itemCache.get(String(key));
+      if (cached) {
+        cmpState[side] = cached;
+        input.value = cached.name + " · " + cached.date;
+        close(); renderComparator();
+        return;
+      }
       const nameEl = btn.querySelector("div:first-child");
       const q = nameEl ? nameEl.textContent.trim() : "";
       try {
@@ -628,7 +640,8 @@
   // Toggle normalizado/real
   function initCmpToggle() {
     const btn = document.getElementById("ana-cmp-normalize");
-    if (!btn) return;
+    if (!btn || btn.dataset.bound) return;
+    btn.dataset.bound = "1";
     btn.addEventListener("click", () => {
       cmpState.normalized = !cmpState.normalized;
       $$(".ana-cmp-toggle-opt", btn).forEach(opt => {
@@ -836,6 +849,12 @@
 
     function onLeave() { cursor.hidden = true; tip.hidden = true; }
 
+    // Sin duplicados: cada render re-registra en el MISMO svg; retirar los
+    // anteriores antes de añadir (si no, el tip se actualiza N veces).
+    if (svg._cmpMove) svg.removeEventListener("mousemove", svg._cmpMove);
+    if (svg._cmpLeave) svg.removeEventListener("mouseleave", svg._cmpLeave);
+    svg._cmpMove = onMove;
+    svg._cmpLeave = onLeave;
     svg.addEventListener("mousemove", onMove);
     svg.addEventListener("mouseleave", onLeave);
     window.MENDI_TEARDOWN.push(() => {
@@ -909,9 +928,16 @@
    * `renderComparator`. Se ejecuta una vez al inicializar la página.
    */
   function autoSelectComparator() {
-    fetch("/api/comparator/search?q=&limit=2", { credentials: "same-origin" })
+    // Abortable: si el swap desmonta el DOM antes de la respuesta, no se
+    // toca nada (evita escribir en nodos muertos).
+    if (cmpState.autoAbort) { try { cmpState.autoAbort.abort(); } catch (_) {} }
+    const ctrl = new AbortController();
+    cmpState.autoAbort = ctrl;
+    window.MENDI_TEARDOWN.push(() => { try { ctrl.abort(); } catch (_) {} });
+    fetch("/api/comparator/search?q=&limit=2", { credentials: "same-origin", signal: ctrl.signal })
       .then(r => r.json())
       .then(data => {
+        if (ctrl.signal.aborted) return;
         const list = data.items || [];
         if (list[0]) {
           cmpState.A = list[0];
