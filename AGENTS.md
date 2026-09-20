@@ -80,3 +80,7 @@ frontend. Python 3.14, entry point `app.main:app`, `lifespan` llama a `init_db()
 - Estilo: `from __future__ import annotations`, tipos explícitos, dataclasses
   para DTOs, mensajes/UI en español. Cambios pequeños; no refactores
   `app/main.py` ni CSS global de paso.
+- Versiones: fuente única `app/__init__.py:__version__` (SemVer), visible en
+  footer/sidebar vía `_ctx(..., app_version=...)`. Bump = editar versión +
+  entrada en `CHANGELOG.md` + commit + tag anotado `vX.Y.Z` (fix→parche,
+  feature→minor, ruptura→major). Nunca hardcodees la versión en templates.

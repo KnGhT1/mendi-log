@@ -242,13 +242,18 @@ def _flash_pop(fid: str | None, user_id: int) -> tuple[str | None, str | None]:
 # ===== Helper de contexto para templates =====
 
 def _ctx(request: Request, current_user: Optional[User], **extra) -> dict:
-    """Contexto base para render — incluye request, user y csrf_token."""
+    """Contexto base para render — incluye request, user, csrf_token y versión."""
     token = request.cookies.get(SESSION_COOKIE) or ""
     csrf = csrf_token_for(token) if token else ""
+    try:
+        from app import __version__ as app_version
+    except (ImportError, AttributeError):
+        app_version = "dev"
     ctx = {
         "request": request,
         "current_user": current_user,
         "csrf_token": csrf,
+        "app_version": app_version,
     }
     ctx.update(extra)
     return ctx
