@@ -236,9 +236,19 @@
       "Satélite (ESRI)": L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { attribution: attr_esri, maxZoom: 19 }),
     };
 
-    let saved = "CartoDB Claro";
-    try { saved = localStorage.getItem(STORAGE_MAP_LAYER) || saved; } catch (_) {}
-    if (!layers[saved]) saved = "CartoDB Claro";
+    let saved = "Satélite (ESRI)";
+    try {
+      const stored = localStorage.getItem(STORAGE_MAP_LAYER);
+      if (stored) {
+        saved = stored;
+      } else {
+        // Primera visita: satélite por defecto y se persiste para que las
+        // siguientes cargas (y el resto de mapas) mantengan el criterio.
+        // A partir de aquí manda la elección del usuario (baselayerchange).
+        localStorage.setItem(STORAGE_MAP_LAYER, saved);
+      }
+    } catch (_) {}
+    if (!layers[saved]) saved = "Satélite (ESRI)";
 
     return { layers, active: saved };
   }
