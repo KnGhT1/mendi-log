@@ -107,6 +107,10 @@ class Route(Base):
     # análisis puedan agrupar con un GROUP BY en lugar del union-find O(n²) en
     # memoria. La asignación vive en `app.clustering`.
     route_cluster_id = Column(Integer, nullable=True, index=True)
+    # Zona IANA del trailhead (Fase 2, p. ej. "Europe/Madrid"). NULL = UTC.
+    # Se resuelve al importar con timezonefinder y se usa para fecha/hora
+    # locales (clima, agrupaciones por día). Ver app/tz.py.
+    timezone = Column(String(64), nullable=True)
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 

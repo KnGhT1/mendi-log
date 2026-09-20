@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 
-from sqlalchemy import func, or_, extract
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.format import (
@@ -21,6 +21,8 @@ from app.format import (
 )
 from app.models import Route
 from app.text_utils import canonical_geo
+from app.tz import local_date as _tz_local_date
+from app.tz import local_datetime as _tz_local_datetime
 
 _VALID_LEVELS = frozenset({"easy", "moderate", "hard", "very-hard"})
 
@@ -29,6 +31,16 @@ def _coerce_aware(dt: datetime) -> datetime:
     """Garantiza datetime UTC-aware (SQLite devuelve naive)."""
     from datetime import UTC
     return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+def _route_local_date(r) -> date:
+    """Fecha local de la ruta en su zona (Fase 2); UTC si no hay zona."""
+    return _tz_local_date(r.started_at, getattr(r, "timezone", None)) or r.started_at.date()
+
+
+def _route_local_datetime(r) -> datetime:
+    """Datetime local de la ruta en su zona (Fase 2); naive UTC si no hay zona."""
+    return _tz_local_datetime(r.started_at, getattr(r, "timezone", None)) or r.started_at
 
 # Circunferencia ecuatorial de la Tierra en km, para el % "vuelta al mundo".
 WORLD_CIRCUMFERENCE_KM = 40075.0
@@ -296,7 +308,7 @@ def build_resumen(db: Session, user_id: int) -> ResumenData:
     # SVG path como Text). Esto recorta la transferencia y la huella de RAM.
     light_rows = (
         db.query(
-            Route.started_at, Route.start_lat, Route.start_lon,
+            Route.started_at, Route.timezone, Route.start_lat, Route.start_lon,
             Route.distance_km, Route.elevation_gain_m, Route.difficulty_score,
             Route.difficulty_level, Route.name,
         )
@@ -305,9 +317,9 @@ def build_resumen(db: Session, user_id: int) -> ResumenData:
         .all()
     )
 
-    # racha activa: SELECT DISTINCT (year, week) en SQL.
+    # racha activa: semanas ISO con actividad según fecha LOCAL de cada ruta.
     weeks_with_activity = {
-        (r.started_at.isocalendar()[0], r.started_at.isocalendar()[1])
+        (_route_local_date(r).isocalendar()[0], _route_local_date(r).isocalendar()[1])
         for r in light_rows
     }
     streak = 0
@@ -326,20 +338,13 @@ def build_resumen(db: Session, user_id: int) -> ResumenData:
         else:
             break
 
-    # último mes con actividad: GROUP BY (year, month) sumando km.
-    km_by_ym_rows = (
-        db.query(
-            extract("year", Route.started_at).label("y"),
-            extract("month", Route.started_at).label("m"),
-            func.coalesce(func.sum(Route.distance_km), 0.0),
-        )
-        .filter(Route.user_id == user_id)
-        .group_by("y", "m")
-        .all()
-    )
-    km_by_ym: dict[tuple[int, int], float] = {
-        (int(y), int(m)): float(km or 0.0) for y, m, km in km_by_ym_rows
-    }
+    # último mes con actividad: GROUP BY (year, month) en Python sobre la
+    # fecha LOCAL de cada ruta (Fase 2; en SQL sería día UTC).
+    km_by_ym: dict[tuple[int, int], float] = defaultdict(float)
+    for r in light_rows:
+        d = _route_local_date(r)
+        km_by_ym[(d.year, d.month)] += float(r.distance_km or 0.0)
+    km_by_ym = dict(km_by_ym)
     if km_by_ym:
         last_active_ym = max(km_by_ym.keys())
         last_active_km = km_by_ym[last_active_ym]
@@ -375,7 +380,7 @@ def build_resumen(db: Session, user_id: int) -> ResumenData:
             name=r.name, lat=r.start_lat, lon=r.start_lon,
             km=r.distance_km, gain=r.elevation_gain_m,
             score=r.difficulty_score, level=r.difficulty_level,
-            date_str=_fmt_date_es(r.started_at),
+            date_str=_fmt_date_es(_route_local_date(r)),
             started_at_iso=r.started_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
         for r in light_rows
@@ -402,7 +407,7 @@ def build_resumen(db: Session, user_id: int) -> ResumenData:
     recent_rows = (
         db.query(
             Route.id, Route.name, Route.region, Route.sub_region,
-            Route.started_at, Route.distance_km, Route.elevation_gain_m,
+            Route.started_at, Route.timezone, Route.distance_km, Route.elevation_gain_m,
             Route.moving_time_s, Route.difficulty_score, Route.difficulty_level,
             Route.min_altitude_m, Route.max_altitude_m,
             Route.elev_line_path, Route.elev_area_path,
@@ -417,7 +422,7 @@ def build_resumen(db: Session, user_id: int) -> ResumenData:
             id=r.id,
             name=r.name,
             sub=_location_subtitle(r.region, r.sub_region),
-            date_str=_fmt_date_es(r.started_at),
+            date_str=_fmt_date_es(_route_local_date(r)),
             started_at_iso=_coerce_aware(r.started_at).strftime("%Y-%m-%dT%H:%M:%SZ"),
             distance_str=f"{_fmt_km(r.distance_km)} km",
             gain_str=f"{_fmt_int(r.elevation_gain_m)} m",
@@ -534,10 +539,10 @@ def _to_ruta_item(r: Route) -> RutaItem:
         score=round(float(r.difficulty_score or 0.0), 1),
         level=r.difficulty_level,
         level_label=_difficulty_label_es(r.difficulty_level),
-        date=_fmt_date_es(r.started_at),
-        date_sort=r.started_at.strftime("%Y-%m-%d"),
+        date=_fmt_date_es(_route_local_datetime(r)),
+        date_sort=_route_local_date(r).strftime("%Y-%m-%d"),
         started_at_iso=r.started_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        year=r.started_at.year,
+        year=_route_local_date(r).year,
         ele_min=int(r.min_altitude_m or 0),
         ele_max=int(r.max_altitude_m or 0),
         line=r.elev_line_path or "",
@@ -586,14 +591,22 @@ def build_rutas(db: Session, user_id: int) -> RutasData:
     total_km = round(float(total_km_raw or 0.0), 2)
     total_gain = int(total_gain_raw or 0)
 
-    # Año mín/máx
-    min_dt, max_dt = (
-        db.query(func.min(Route.started_at), func.max(Route.started_at))
+    # Año mín/máx según fecha LOCAL (Fase 2). El orden UTC coincide con el
+    # local dentro de una misma zona, así que basta convertir los extremos.
+    min_row = (
+        db.query(Route.started_at, Route.timezone)
         .filter(Route.user_id == user_id)
+        .order_by(Route.started_at.asc())
         .first()
     )
-    year_min = min_dt.year if min_dt else None
-    year_max = max_dt.year if max_dt else None
+    max_row = (
+        db.query(Route.started_at, Route.timezone)
+        .filter(Route.user_id == user_id)
+        .order_by(Route.started_at.desc())
+        .first()
+    )
+    year_min = _route_local_date(min_row).year if min_row else None
+    year_max = _route_local_date(max_row).year if max_row else None
 
     # Facets de región (group by Route.region en SQL)
     region_rows = (
@@ -700,7 +713,6 @@ def _parse_range(token: str) -> Optional[tuple[float, float]]:
 
 def _apply_filters(qry, q: RutaQuery):
     """Aplica todos los filtros de RutaQuery a una Query de SQLAlchemy."""
-
     # Dificultad: lista; vacía o todas-las-4 = no filtrar
     if q.difficulty:
         diffs = [d for d in q.difficulty if d in _ALLOWED_LEVELS]
@@ -735,15 +747,21 @@ def _apply_filters(qry, q: RutaQuery):
         a, b = gain_range
         qry = qry.filter(Route.elevation_gain_m >= a, Route.elevation_gain_m < b)
 
-    # Fecha — rango libre YYYY-MM-DD
+    # Fecha — rango libre YYYY-MM-DD sobre la fecha LOCAL de cada ruta
+    # (Fase 2). En SQL es imposible por zona; se ensancha ±1 día y se
+    # post-filtra en Python en query_rutas (ver _needs_local_date_filter).
     if q.date_from:
         try:
-            qry = qry.filter(Route.started_at >= datetime.fromisoformat(q.date_from))
+            qry = qry.filter(
+                Route.started_at >= datetime.fromisoformat(q.date_from) - timedelta(days=1)
+            )
         except ValueError:
             pass
     if q.date_to:
         try:
-            qry = qry.filter(Route.started_at < datetime.fromisoformat(q.date_to) + timedelta(days=1))
+            qry = qry.filter(
+                Route.started_at < datetime.fromisoformat(q.date_to) + timedelta(days=2)
+            )
         except ValueError:
             pass
 
@@ -762,6 +780,32 @@ def _apply_filters(qry, q: RutaQuery):
     return qry
 
 
+def _parse_local_day(token: str) -> Optional[date]:
+    """Parsea 'YYYY-MM-DD' a date. None si vacío o inválido."""
+    if not token:
+        return None
+    try:
+        return datetime.fromisoformat(token).date()
+    except ValueError:
+        return None
+
+
+def _needs_local_date_filter(q: RutaQuery) -> bool:
+    """True si hay filtro de fechas que exige post-filtrado Python (Fase 2)."""
+    return _parse_local_day(q.date_from) is not None or _parse_local_day(q.date_to) is not None
+
+
+_PY_SORT_KEYS = {
+    "date-desc": (lambda r: r.started_at, True),
+    "date-asc": (lambda r: r.started_at, False),
+    "km-desc": (lambda r: r.distance_km or 0.0, True),
+    "km-asc": (lambda r: r.distance_km or 0.0, False),
+    "gain-desc": (lambda r: r.elevation_gain_m or 0, True),
+    "gain-asc": (lambda r: r.elevation_gain_m or 0, False),
+    "score-desc": (lambda r: r.difficulty_score or 0.0, True),
+}
+
+
 def query_rutas(db: Session, user_id: int, q: RutaQuery) -> RutaQueryResult:
     """Listado paginado, filtrado y ordenado a nivel SQL — acotado al usuario."""
     total = (
@@ -773,6 +817,10 @@ def query_rutas(db: Session, user_id: int, q: RutaQuery) -> RutaQueryResult:
     base = _apply_filters(
         db.query(Route).filter(Route.user_id == user_id), q,
     )
+
+    if _needs_local_date_filter(q):
+        return _query_rutas_local_date(db, base, q, total)
+
     matched = base.with_entities(func.count(Route.id)).scalar() or 0
 
     sort_clause = _SORT_MAP.get(q.sort, _SORT_MAP["date-desc"])
@@ -791,4 +839,33 @@ def query_rutas(db: Session, user_id: int, q: RutaQuery) -> RutaQueryResult:
         total=int(total),
         matched=int(matched),
         has_more=(q.offset + len(items)) < int(matched),
+    )
+
+
+def _query_rutas_local_date(db: Session, base, q: RutaQuery, total: int) -> RutaQueryResult:
+    """Variante con filtro de fechas por día LOCAL (Fase 2).
+
+    El SQL ya viene ensanchado ±1 día; aquí se filtra por fecha local exacta,
+    se ordena y se pagina en Python (volúmenes de cientos: despreciable).
+    """
+    date_from = _parse_local_day(q.date_from)
+    date_to = _parse_local_day(q.date_to)
+    rows = [
+        r for r in base.all()
+        if (date_from is None or _route_local_date(r) >= date_from)
+        and (date_to is None or _route_local_date(r) <= date_to)
+    ]
+    key_fn, reverse = _PY_SORT_KEYS.get(q.sort, _PY_SORT_KEYS["date-desc"])
+    # Desempate estable por id desc (igual que la rama SQL) vía doble sort.
+    rows.sort(key=lambda r: r.id or 0, reverse=True)
+    rows.sort(key=key_fn, reverse=reverse)
+    matched = len(rows)
+    offset = max(0, q.offset)
+    limit = max(1, min(q.limit, 200))
+    page = rows[offset:offset + limit]
+    return RutaQueryResult(
+        items=[_to_ruta_item(r) for r in page],
+        total=int(total),
+        matched=int(matched),
+        has_more=(offset + len(page)) < int(matched),
     )

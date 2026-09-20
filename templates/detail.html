@@ -225,7 +225,8 @@
         </div>
         <div class="marker-info">
           <div class="name">{{ m.name }}</div>
-          <div class="sub">{{ m.label }}{% if m.time_str != '—' %} · {{ m.time_str }}{% endif %}</div>
+          {# Fase 1: el JS reescribe la hora UTC SSR a hora local usando data-t-utc. #}
+          <div class="sub" data-label="{{ m.label }}"{% if m.time_utc %} data-t-utc="{{ m.time_utc }}"{% endif %}>{{ m.label }}{% if m.time_str != '—' %} · {{ m.time_str }}{% endif %}</div>
         </div>
         <div class="marker-meta">
           <span>{{ m.elev_m | fmt_int }} m</span>
@@ -266,7 +267,8 @@
     <div class="tech-cell">
       <div class="l">tiempo total</div>
       <div class="v">{{ data.tech.total_time_str }}</div>
-      <div class="sub">{{ data.tech.start_end_str }}</div>
+      {# Fase 1: el JS reescribe salida/llegada a hora local. #}
+      <div class="sub"{% if data.tech.start_utc %} data-start-utc="{{ data.tech.start_utc }}" data-end-utc="{{ data.tech.end_utc }}"{% endif %}>{{ data.tech.start_end_str }}</div>
     </div>
     <div class="tech-cell">
       <div class="l">tiempo en marcha</div>

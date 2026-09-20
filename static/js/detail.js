@@ -82,6 +82,16 @@
     // dispara un 422 ruidoso en consola.
     if (ROUTE_ID == null) return;
 
+    // ============ HORA LOCAL (Fase 1) ============
+    // La BD guarda UTC naive y el backend lo etiqueta con `Z`. El clima
+    // (hourly de Open-Meteo con timezone:auto) viene en wall-time local de
+    // la ruta. `routeTz` es la zona para mostrar/ comparar: la del payload
+    // de clima cuando llega, si no la del navegador.
+    let routeTz = null;
+    try {
+      routeTz = Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+    } catch (_) { routeTz = null; }
+
     // ============ MAPA ============
     let detailMap = null;
     let detailMapLayerCtrl = null;
@@ -171,6 +181,30 @@
      * Obtiene track, bbox, milestones y elev_samples desde la API
      * y los pinta sobre el mapa ya inicializado.
      */
+    /**
+     * Popups de hitos con hora local (Fase 1). Viven en scope de `init`
+     * para que `renderWeather` pueda regenerarlos al llegar la zona de la
+     * ruta (antes estaban dentro de `_fetchTrack` y rompían el clima con
+     * un ReferenceError). `timePopups` lo rellena `_fetchTrack`.
+     */
+    const timePopups = [];
+    function popupHtml(m) {
+      const when = m.t ? fmtInstantHM(m.t) : (m.time || "—");
+      const lines = [
+        `<div style="font-family:Fraunces,serif;font-size:14px;font-weight:500;margin-bottom:4px;">${escapeHtml(m.name)}</div>`,
+        `<div style="font-family:'IBM Plex Mono',monospace;font-size:11px;opacity:0.75;line-height:1.6;">`,
+        `${escapeHtml(m.label)}${when && when !== "—" ? ` · ${escapeHtml(when)}` : ""}<br>`,
+        `${fmtInt(m.elev_m)} m · km ${fmtKm(m.km)}`,
+        `</div>`,
+      ];
+      return lines.join("");
+    }
+    function refreshPopupTimes() {
+      timePopups.forEach(({ marker, m }) => {
+        try { marker.setPopupContent(popupHtml(m)); } catch (_) {}
+      });
+    }
+
     async function _fetchTrack() {
       try {
         const res = await fetch(`/api/rutas/${ROUTE_ID}/track`);
@@ -203,19 +237,16 @@
           color, weight: 3.2, opacity: 0.95, lineCap: "round", lineJoin: "round",
         }).addTo(detailMap);
 
+        // Popups de hitos con hora local (Fase 1): el contenido se
+        // regenera si llega una zona mejor (ver refreshPopupTimes,
+        // definido en scope de init junto a timePopups/popupHtml).
         milestones.forEach((m) => {
           if (m.kind === "summit") return; // gestionados por _addSummitMarker o fallback
           const pt = _milestonePoint(m, track);
           if (!pt) return;
           const marker = L.marker(pt, { icon: buildPinIcon(m) }).addTo(detailMap);
-          const lines = [
-            `<div style="font-family:Fraunces,serif;font-size:14px;font-weight:500;margin-bottom:4px;">${escapeHtml(m.name)}</div>`,
-            `<div style="font-family:'IBM Plex Mono',monospace;font-size:11px;opacity:0.75;line-height:1.6;">`,
-            `${escapeHtml(m.label)}${m.time && m.time !== "—" ? ` · ${escapeHtml(m.time)}` : ""}<br>`,
-            `${fmtInt(m.elev)} m · km ${fmtKm(m.km)}`,
-            `</div>`,
-          ];
-          marker.bindPopup(lines.join(""));
+          marker.bindPopup(popupHtml(m));
+          timePopups.push({ marker, m });
         });
 
         const target = (bbox && bbox.length === 2) ? bbox : trackPolyline.getBounds();
@@ -472,8 +503,8 @@
           div.innerHTML =
             `<div class="marker-pin summit">▲</div>` +
             `<div class="marker-info">` +
-              `<div class="name">${m.name || "Cima"}</div>` +
-              `<div class="sub">${m.label}</div>` +
+              `<div class="name">${escapeHtml(m.name || "Cima")}</div>` +
+              `<div class="sub">${escapeHtml(m.label || "")}</div>` +
             `</div>` +
             `<div class="marker-meta">` +
               `<span>${fmtInt(m.elev_m)} m</span>` +
@@ -634,7 +665,8 @@
 
         ttAlt.textContent = `${fmtInt(s.alt)} m`;
         ttDist.textContent = `${fmtKm(s.km)} km`;
-        ttTime.textContent = s.t_str || "—";
+        // Fase 1: t_iso lleva Z (UTC); se muestra en hora local de la ruta.
+        ttTime.textContent = s.t_iso ? fmtInstantHM(s.t_iso) : (s.t_str || "—");
         const grad = s.grad_pct;
         if (grad == null || isNaN(grad)) {
           ttGrad.textContent = "—";
@@ -723,8 +755,21 @@
       const hourly = wx.hourly || {};
       const hours = hourly.time || [];
 
-      const hikeStart = payload.hike_start ? new Date(payload.hike_start) : null;
-      const hikeEnd = payload.hike_end ? new Date(payload.hike_end) : null;
+      // Fase 1: `hourly.time` es wall-time local de la ruta (Open-Meteo con
+      // timezone:auto). Los hike_* llegan como instantes UTC con `Z`: los
+      // convertimos a wall-time de la zona del payload para comparar en el
+      // mismo marco. Sin `timezone` en el payload, se usa la del navegador.
+      const tz = (wx.timezone && String(wx.timezone)) || routeTz || null;
+      if (wx.timezone) {
+        routeTz = wx.timezone;
+        rewriteClockTimes();
+        // Blindaje: si el refresco de popups fallase, la tarjeta debe
+        // seguir pintándose (un ReferenceError aquí la vaciaba entera).
+        if (typeof refreshPopupTimes === "function") refreshPopupTimes();
+      }
+
+      const hikeStart = payload.hike_start ? parseLocalIso(utcToWall(payload.hike_start, tz)) : null;
+      const hikeEnd = payload.hike_end ? parseLocalIso(utcToWall(payload.hike_end, tz)) : null;
 
       const inWindow = (iso) => {
         if (!hikeStart || !hikeEnd) return false;
@@ -889,11 +934,62 @@
     }
 
     /**
-     * Extrae la hora local `"HH:MM"` de un string ISO. Primero intenta
-     * parsear el patrón `T\d{2}:\d{2}` directamente (evita conversión
-     * de zona horaria); si falla usa `new Date`.
-     * @param {string} iso
-     * @returns {string}
+     * Formatea un instante ISO con `Z` (UTC) como "HH:MM" en la zona `tz`
+     * (o la del navegador si no se indica). Devuelve "—" sin dato.
+     */
+    function fmtInstantHM(isoZ, tz) {
+      if (!isoZ) return "—";
+      try {
+        const zone = tz || routeTz || undefined;
+        const parts = new Intl.DateTimeFormat("es-ES", {
+          timeZone: zone, hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+        }).formatToParts(new Date(isoZ));
+        const get = (t) => (parts.find((p) => p.type === t) || {}).value || "00";
+        return `${get("hour")}:${get("minute")}`;
+      } catch (_) {
+        const d = new Date(isoZ);
+        return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+      }
+    }
+
+    /**
+     * Convierte un instante UTC a wall-time "YYYY-MM-DDTHH:MM" en la zona
+     * `tz` (comparable lexicográficamente con los hourly de Open-Meteo,
+     * que ya son wall-time local). Fallback: zona del navegador.
+     */
+    function utcToWall(isoZ, tz) {
+      const zone = tz || routeTz || undefined;
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+      }).formatToParts(new Date(isoZ));
+      const get = (t) => (parts.find((p) => p.type === t) || {}).value;
+      return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
+    }
+
+    /**
+     * Reescribe las horas SSR (UTC) a hora local: hitos `[data-t-utc]` y
+     * celda salida/llegada `[data-start-utc]`. Se llama al init (zona del
+     * navegador) y de nuevo al llegar el clima (zona de la ruta).
+     */
+    function rewriteClockTimes() {
+      document.querySelectorAll("[data-t-utc]").forEach((el) => {
+        const iso = el.getAttribute("data-t-utc");
+        const label = el.getAttribute("data-label") || "";
+        if (iso) el.textContent = `${label} · ${fmtInstantHM(iso)}`;
+      });
+      const se = document.querySelector("[data-start-utc]");
+      if (se) {
+        const s = se.getAttribute("data-start-utc");
+        const e = se.getAttribute("data-end-utc");
+        if (s && e) se.textContent = `salida ${fmtInstantHM(s)} · llegada ${fmtInstantHM(e)}`;
+      }
+    }
+
+    /**
+     * Formatea un string ISO sin zona horaria (`"YYYY-MM-DDTHH:MM"`) como
+     * "HH:MM" verbatim (ya es hora local). Para instantes con `Z`, usar
+     * fmtInstantHM en su lugar.
      */
     function formatHourLocal(iso) {
       if (!iso) return "—";
@@ -1310,6 +1406,9 @@
 
     // ============ ARRANQUE ============
     // initAddSummitMode se elimina: el control se crea directamente en _bindMapClickForSummit
+    // Fase 1: corrige las horas SSR (UTC) a hora local del navegador; se
+    // repite al llegar el clima con la zona de la ruta.
+    rewriteClockTimes();
     initMap();
     initWeather();
     initNotes();

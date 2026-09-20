@@ -12,7 +12,7 @@ from typing import Generator
 
 from sqlalchemy.orm import Session
 
-from app.clustering import backfill_clusters
+from app.clustering import backfill_clusters_for_user
 from app.difficulty import DifficultyInputs, difficulty_level, difficulty_score
 from app.geocoder import reverse_geocode
 from app.gpx_parser import parse_gpx
@@ -21,6 +21,7 @@ from app.models import Route, Summit, TrackPoint
 from app.name_cleaner import clean_name, detect_region
 from app.summits import fetch_summits
 from app.text_utils import canonical_geo
+from app.tz import resolve_timezone
 
 
 def _emit(obj: dict) -> str:
@@ -122,6 +123,8 @@ def reprocesar_stream(db: Session, user_id: int) -> Generator[str, None, None]:
         r.country = canonical_geo(country)
         r.region = canonical_geo(region)
         r.sub_region = canonical_geo(sub_region)
+        # Fase 2: el trailhead puede haber cambiado al re-parsear.
+        r.timezone = resolve_timezone(r.start_lat, r.start_lon)
 
         score = difficulty_score(DifficultyInputs(
             distance_km=stats.distance_km,
@@ -155,9 +158,9 @@ def reprocesar_stream(db: Session, user_id: int) -> Generator[str, None, None]:
                      "status": "ok", "detail": ""})
 
     # Tras reescribir trailheads y altitudes los clusters pueden haber cambiado.
-    # backfill_clusters opera por usuario; lo lanzamos solo si hubo cambios.
+    # H11: solo los del usuario que reprocesa, nunca los de otros usuarios.
     if updated:
-        backfill_clusters(db)
+        backfill_clusters_for_user(db, user_id)
 
     yield _emit({"type": "done", "scanned": len(routes),
                  "updated": updated, "skipped": skipped,

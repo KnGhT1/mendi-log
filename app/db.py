@@ -120,6 +120,75 @@ def _ensure_user_columns() -> None:
             conn.commit()
 
 
+def _ensure_route_columns() -> None:
+    """Añade `routes.timezone` (Fase 2) sin perder datos existentes."""
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    with engine.connect() as conn:
+        rows = list(conn.exec_driver_sql("PRAGMA table_info(routes)"))
+        cols = {r[1] for r in rows}
+        if "timezone" not in cols:
+            conn.exec_driver_sql("ALTER TABLE routes ADD COLUMN timezone TEXT")
+            conn.commit()
+
+
+def _backfill_route_timezones() -> None:
+    """Resuelve la zona de rutas con `timezone IS NULL` (Fase 2).
+
+    Cómputo local con timezonefinder (sin red), idempotente: la segunda
+    pasada no toca nada. Corre en `init_db()` con commit explícito sin
+    invalidar cachés (aún no existen).
+    """
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    from app.tz import resolve_timezone
+
+    with SessionLocal() as db:
+        from app.models import Route
+        rows = (
+            db.query(Route.id, Route.start_lat, Route.start_lon)
+            .filter(Route.timezone.is_(None))
+            .all()
+        )
+        if not rows:
+            return
+        touched = 0
+        for rid, lat, lon in rows:
+            tz = resolve_timezone(lat, lon)
+            if tz:
+                db.execute(
+                    Route.__table__.update()
+                    .where(Route.id == rid)
+                    .values(timezone=tz)
+                )
+                touched += 1
+        db.commit()
+    if touched:
+        logger.info("[tz-backfill] %d ruta(s) con zona asignada", touched)
+
+
+def _purge_weather_cache() -> None:
+    """Vacía `weather_cache` una vez (Fase 2).
+
+    La clave (lat, lon, date) cambia de día UTC a día local; las filas
+    antiguas podrían colisionar con la fecha coincidente. El re-fetch es
+    perezoso por vista. Solo purga si existen rutas sin zona (es decir,
+    migración pendiente); después del backfill no vuelve a purgar.
+    """
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    with engine.connect() as conn:
+        pending = conn.exec_driver_sql(
+            "SELECT COUNT(*) FROM routes WHERE timezone IS NULL"
+        ).scalar()
+        if pending:
+            n = conn.exec_driver_sql("SELECT COUNT(*) FROM weather_cache").scalar()
+            if n:
+                conn.exec_driver_sql("DELETE FROM weather_cache")
+                conn.commit()
+                logger.info("[tz-backfill] weather_cache purgada (%d filas)", n)
+
+
 def _bootstrap_first_admin() -> None:
     """Si no hay ningún admin activo, promueve al usuario más antiguo.
 
@@ -222,5 +291,9 @@ def init_db() -> None:
     from app import models  # noqa: F401  (registra los modelos)
     Base.metadata.create_all(bind=engine)
     _ensure_user_columns()
+    _ensure_route_columns()
     _normalize_geo_columns()
+    # Orden Fase 2: purga (si hay rutas sin zona) ANTES del backfill.
+    _purge_weather_cache()
+    _backfill_route_timezones()
     _bootstrap_first_admin()

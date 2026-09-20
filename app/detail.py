@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Route, Summit, TrackPoint
 from app.text_utils import canonical_geo
+from app.tz import local_datetime
 from app.stats import (
     MONTH_LABELS_ES,
     _difficulty_label_es,
@@ -57,7 +58,8 @@ class Milestone:
     elev_m: int
     km: float
     km_str: str
-    time_str: str      # "09:14"
+    time_str: str      # "09:14" (SSR, hora UTC: el JS lo reescribe a local)
+    time_utc: Optional[str] = None  # ISO con Z para corrección en cliente
 
 
 @dataclass
@@ -87,7 +89,7 @@ class TechData:
     total_time_str: str
     moving_time_str: str
     stop_time_str: str             # "12 min de paradas"
-    start_end_str: str             # "salida 09:14 · llegada 11:22" o "—"
+    start_end_str: str             # "salida 09:14 · llegada 11:22" o "—" (SSR, UTC)
     pace_avg: str                  # "16:46"
     pace_avg_kmh: str              # "3,57"
     pace_up: str                   # "21:14" o "—"
@@ -106,6 +108,8 @@ class TechData:
     fatigue_level: str             # easy | moderate | hard | very-hard
     gpx_points: int
     gpx_density_str: str           # "~6,1 m / punto"
+    start_utc: Optional[str] = None  # ISO con Z para corrección en cliente
+    end_utc: Optional[str] = None    # ISO con Z para corrección en cliente
 
 
 @dataclass
@@ -265,6 +269,17 @@ def _fmt_hhmm(d: Optional[datetime]) -> str:
     if not d:
         return "—"
     return f"{d.hour:02d}:{d.minute:02d}"
+
+
+def _iso_z(d: Optional[datetime]) -> Optional[str]:
+    """Instante UTC con `Z` explícita para el cliente (Fase 1).
+
+    La BD guarda UTC naive; el sufijo evita que `new Date()` lo lea como
+    hora local del navegador. Devuelve None si no hay dato.
+    """
+    if not d:
+        return None
+    return d.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _fmt_date_short(d: datetime | date) -> str:
@@ -484,7 +499,7 @@ def _build_elev_profile(
             "y": round(y, 1),
             "km": round(target / 1000.0, 2),
             "alt": int(round(ele)),
-            "t_iso": t.isoformat() if t else None,
+            "t_iso": _iso_z(t),
             "t_str": _fmt_hhmm(t),
             "grad_pct": round(grad_pct, 1),
         })
@@ -585,9 +600,11 @@ def _fatigue_score(distance_km: float, gain_m: int) -> Tuple[float, str]:
 def _build_hero(db: Session, user_id: int, route: Route, slope_avg_pct: float) -> HeroData:
     """Construye el dataclass HeroData con los datos del encabezado de detalle."""
     number = _ruta_number(db, user_id, route)
+    # Fase 2: fecha local de la ruta (antes día UTC).
+    started_local = local_datetime(route.started_at, route.timezone) or route.started_at
     return HeroData(
         number=number,
-        date_str=_fmt_date_es(route.started_at),
+        date_str=_fmt_date_es(started_local.date()),
         region=(route.region or "—"),
         season=_season_es(route.started_at),
         title=route.name,
@@ -635,6 +652,7 @@ def _build_milestones(
             km=0.0,
             km_str=f"km {_fmt_km_short(0.0)}",
             time_str=_fmt_hhmm(points[0].time),
+            time_utc=_iso_z(points[0].time),
         ))
 
         for s in summits:
@@ -665,6 +683,7 @@ def _build_milestones(
             km=round(total_km_2d, 1),
             km_str=f"km {_fmt_km_short(total_km_2d)}",
             time_str=_fmt_hhmm(points[-1].time),
+            time_utc=_iso_z(points[-1].time),
         ))
 
     return milestones, summit_lat, summit_lon
@@ -730,8 +749,12 @@ def _build_tech(
 
     if points and points[0].time and points[-1].time:
         start_end_str = f"salida {_fmt_hhmm(points[0].time)} · llegada {_fmt_hhmm(points[-1].time)}"
+        start_utc = _iso_z(points[0].time)
+        end_utc = _iso_z(points[-1].time)
     else:
         start_end_str = "—"
+        start_utc = None
+        end_utc = None
 
     fatigue_score, fatigue_level = _fatigue_score(route.distance_km, route.elevation_gain_m or 0)
     density_m = (total2d / len(points)) if points else 0.0
@@ -743,6 +766,8 @@ def _build_tech(
         moving_time_str=_fmt_duration(moving_s),
         stop_time_str=f"{int(stop_s // 60)} min de paradas" if stop_s > 0 else "sin paradas",
         start_end_str=start_end_str,
+        start_utc=start_utc,
+        end_utc=end_utc,
         pace_avg=pace_avg,
         pace_avg_kmh=pace_avg_kmh,
         pace_up=pace_up,
@@ -986,7 +1011,7 @@ def build_detail(db: Session, user_id: int, route_id: int) -> Optional[DetailDat
         prev_name=prev_route.name if prev_route else None,
         next_id=next_route.id if next_route else None,
         next_name=next_route.name if next_route else None,
-        weather_meta=f"open-meteo · era5 archive · {_fmt_date_es(route.started_at)}",
+        weather_meta=f"open-meteo · era5 archive · {_fmt_date_es((local_datetime(route.started_at, route.timezone) or route.started_at).date())}",
         started_at_iso=route.started_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         summit_lat=summit_lat,
         summit_lon=summit_lon,
