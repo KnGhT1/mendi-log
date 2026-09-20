@@ -228,8 +228,28 @@
   display: grid; grid-template-columns: repeat(6, 1fr);
   gap: 18px; margin-top: 28px; padding-bottom: 28px;
 }
-@media (max-width: 1100px) { .ana-hero-stats { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 640px)  { .ana-hero-stats { grid-template-columns: repeat(2, 1fr); } }
+/* Guardarraíl: las columnas pueden encoger bajo su contenido; sin esto,
+   la tarjeta-calendario (ancho fijo) ensancha la página en lugar de
+   contenerse. No crea scroll-container: el sticky del nav sobrevive. */
+.ana-hero-stats > * { min-width: 0; }
+/* La mini-calendario, contenida: scroll interno en vez de empujar la página */
+.ana-cal-mini { max-width: 100%; overflow-x: auto; padding-bottom: 2px; }
+@media (max-width: 1100px) {
+  .ana-hero-stats { grid-template-columns: repeat(3, 1fr); }
+  .ana-cal-mini-head,
+  .ana-cal-mini-row { grid-template-columns: 28px repeat(12, 12px); }
+  .ana-cal-mini .ana-cal-cell { width: 12px; height: 12px; }
+}
+@media (max-width: 640px)  {
+  .ana-hero-stats { grid-template-columns: repeat(2, 1fr); }
+  .ana-cal-mini-head,
+  .ana-cal-mini-row { grid-template-columns: 26px repeat(12, 11px); }
+  .ana-cal-mini .ana-cal-cell { width: 11px; height: 11px; }
+}
+@media (max-width: 480px) {
+  /* Fila propia para la tarjeta-calendario, sin compresión */
+  .ana-stat-cal { grid-column: 1 / -1; }
+}
 .ana-stat {
   border-left: 2px solid var(--accent);
   padding: 4px 0 4px 14px;
@@ -353,6 +373,13 @@
 .ana-zone-meta {
   font-family: var(--font-mono); font-size: 10px; color: var(--text-dim);
 }
+
+/* Guardarraíl anti-overflow en grids de la página (ver .ana-hero-stats):
+   los items pueden encoger bajo su contenido en vez de ensanchar el documento. */
+.ana-patterns > *,
+.ana-dist-row > *,
+.ana-cmp-pickers > *,
+.ana-cmp-table { min-width: 0; }
 
 /* ===================== 02 · PATRONES ===================== */
 .ana-patterns {
@@ -523,7 +550,7 @@
   border-radius: 14px; padding: 18px;
 }
 .ana-evo-legend {
-  display: flex; gap: 18px; margin-bottom: 14px;
+  display: flex; flex-wrap: wrap; gap: 18px; row-gap: 8px; margin-bottom: 14px;
   font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
   align-items: center;
 }
@@ -609,6 +636,11 @@
 .ana-donut-card {}
 .ana-donut-row {
   display: grid; grid-template-columns: 140px 1fr; gap: 18px; align-items: center;
+  min-width: 0;
+}
+@media (max-width: 1100px) {
+  .ana-donut-row { grid-template-columns: 120px 1fr; }
+  .ana-donut { width: 120px; height: 120px; }
 }
 .ana-donut { width: 140px; height: 140px; }
 .ana-donut-legend {
@@ -638,7 +670,7 @@
 }
 .ana-scatter { width: 100%; height: 380px; display: block; overflow: hidden; }
 .ana-scatter-legend {
-  display: flex; gap: 18px; margin-top: 12px;
+  display: flex; flex-wrap: wrap; gap: 18px; row-gap: 8px; margin-top: 12px;
   font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
 }
 .ana-scatter-legend span { display: inline-flex; align-items: center; gap: 6px; }
@@ -702,6 +734,7 @@
 .ana-cal-scroll {
   max-height: 360px;
   overflow-y: auto;
+  overflow-x: auto;
   padding-right: 8px;
   display: grid;
   gap: 18px;
@@ -728,8 +761,8 @@
   grid-template-columns: repeat(12, minmax(64px, 1fr));
   gap: 4px;
 }
-@media (max-width: 1100px) { .ana-cal-months { grid-template-columns: repeat(6, minmax(64px, 1fr)); gap: 6px; } }
-@media (max-width: 640px)  { .ana-cal-months { grid-template-columns: repeat(3, minmax(64px, 1fr)); gap: 8px; } }
+@media (max-width: 1150px) { .ana-cal-months { grid-template-columns: repeat(6, minmax(60px, 1fr)); gap: 6px; } }
+@media (max-width: 640px)  { .ana-cal-months { grid-template-columns: repeat(3, minmax(60px, 1fr)); gap: 8px; } }
 .ana-cal-month {
   min-width: 0;
 }
@@ -841,7 +874,7 @@
   border-radius: 14px; padding: 16px 18px;
 }
 .ana-cmp-chart-head {
-  display: flex; justify-content: space-between; align-items: center;
+  display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: center;
   margin-bottom: 10px;
 }
 .ana-cmp-chart-title {
