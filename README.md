@@ -280,7 +280,6 @@ mendi-log/
 │   ├── download_assets.py ← descarga fuentes y libs para uso offline
 │   ├── create_user.py     ← alta de usuarios (Argon2id, pool cerrado)
 │   ├── audit_css.py       ← esqueleto de auditoría CSS (usar vía pytest, no como CLI)
-│   └── _debug_keys.py     ← utilidad de depuración de claves de clustering
 ├── data/                  ← estado local ignorado por Git (nunca commitear)
 │   ├── mendi.db           ← SQLite (rutas, usuarios, sesiones, clima, geocodificación)
 │   ├── gpx/{user_id}/     ← GPX originales, aislados por usuario
