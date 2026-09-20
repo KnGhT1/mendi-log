@@ -26,6 +26,8 @@ Desktop.ini
 
 # Environment
 .env
+.env.*
+!.env.example
 
 # Distribution / packaging
 *.egg-info/
@@ -35,11 +37,38 @@ build/
 # pytest
 .pytest_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
 
-# security audit runs (skill artifacts, local only)
-security-audit/
+# security audit runs (skill artifacts, local only; anclado para no cazar
+# .agents/skills/security-audit/, que sí se versiona)
+/security-audit/
 
 # mypy / pyright
 .mypy_cache/
 .pyright/
+
+# Logs
+*.log
+logs/
+
+# Hypothesis / linters
+.hypothesis/
+.ruff_cache/
+
+# Node raíz (red de seguridad)
+node_modules/
+
+# Tooling IA local
+.opencode/
+
+# SQLite sueltos fuera de data/ (data/ ya cubre los reales; red para el resto)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
