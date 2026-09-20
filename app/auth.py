@@ -76,6 +76,22 @@ def revoke_session(db: Session, token: str) -> None:
         db.commit()
 
 
+def revoke_user_sessions(db: Session, user_id: int) -> int:
+    """Revoca todas las sesiones del usuario (H10: tras reset de password).
+
+    Devuelve el número de sesiones revocadas. Hace commit para que los
+    llamadores offline (scripts/create_user.py) no necesiten gestionarlo.
+    """
+    rows = db.query(UserSession).filter(UserSession.user_id == user_id).all()
+    n = 0
+    for sess in rows:
+        if not sess.revoked:
+            sess.revoked = 1
+            n += 1
+    db.commit()
+    return n
+
+
 def set_session_cookie(response: Response, token: str, *, remember: bool, request: Request) -> None:
     max_age = (SESSION_DAYS_REMEMBER if remember else SESSION_DAYS) * 24 * 3600
     secure = request.url.scheme == "https" or os.environ.get("MENDI_REQUIRE_HTTPS") == "1"

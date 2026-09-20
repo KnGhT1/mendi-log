@@ -151,14 +151,23 @@ def backfill_clusters(db: Session) -> int:
     user_ids = [uid for (uid,) in db.query(Route.user_id).distinct()]
     total = 0
     for uid in user_ids:
-        routes = (
-            db.query(Route)
-            .filter(Route.user_id == uid)
-            .order_by(Route.id.asc())
-            .all()
-        )
-        total += _cluster_user_routes(routes)
+        total += backfill_clusters_for_user(db, uid)
     return total
+
+
+def backfill_clusters_for_user(db: Session, user_id: int) -> int:
+    """Recalcula `route_cluster_id` solo para las rutas de `user_id` (H11).
+
+    Evita reescribir clusters de otros usuarios cuando el reprocesado lo
+    dispara un único usuario (maintenance.reprocesar_stream).
+    """
+    routes = (
+        db.query(Route)
+        .filter(Route.user_id == user_id)
+        .order_by(Route.id.asc())
+        .all()
+    )
+    return _cluster_user_routes(routes)
 
 
 def group_by_cluster(routes: Iterable[Route]) -> Dict[int, List[Route]]:

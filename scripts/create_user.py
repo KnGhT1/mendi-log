@@ -20,7 +20,7 @@ from pathlib import Path
 # Permitir ejecución desde la raíz del proyecto.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.auth import hash_password  # noqa: E402
+from app.auth import hash_password, revoke_user_sessions  # noqa: E402
 from app.db import SessionLocal, init_db  # noqa: E402
 from app.models import User  # noqa: E402
 
@@ -75,7 +75,11 @@ def main() -> int:
             if args.role != existing.role:
                 existing.role = args.role
             db.commit()
+            # H10: al cambiar la password, revoca sus sesiones abiertas.
+            revoked = revoke_user_sessions(db, existing.id)
             print(f"Usuario {email} actualizado (rol={existing.role}).")
+            if revoked:
+                print(f"Sesiones revocadas: {revoked}.")
         else:
             # ¿BD vacía? El primero siempre admin, da igual qué pidieran.
             total_users = db.query(User).count()

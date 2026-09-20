@@ -81,3 +81,33 @@ def test_parse_devuelve_paths_svg_no_vacios():
     assert stats.elev_line_path
     assert stats.elev_area_path
     assert stats.elev_line_path.startswith("M")
+
+
+class _FakeQuery:
+    """Cadena mínima .filter().first() -> None para el dedup de process_gpx."""
+
+    def filter(self, *args, **kwargs):
+        return self
+
+    def first(self):
+        return None
+
+
+class _FakeDB:
+    def query(self, *args, **kwargs):
+        return _FakeQuery()
+
+
+def test_process_gpx_xml_malformado_devuelve_error_sin_lanzar():
+    """gpxpy lanza GPXException (no ValueError) ante XML truncado.
+
+    Regresión H4: importer.process_gpx debe capturarla y devolver
+    status="error" en vez de propagar un 500. El parse falla antes de
+    tocar disco/BD, así que basta una BD falsa.
+    """
+    from app.importer import process_gpx
+
+    bad = "<gpx><trk><trkseg><trkpt lat='x'>".encode("utf-8")
+    res = process_gpx(_FakeDB(), 1, "roto.gpx", bad)
+    assert res.status == "error"
+    assert res.error_msg

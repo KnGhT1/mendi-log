@@ -53,12 +53,14 @@ from app.auth import (
     require_writer,
     resolve_session,
     revoke_session,
+    revoke_user_sessions,
     set_session_cookie,
     verify_dummy,
     verify_password,
 )
 from app.db import commit as _db_commit, get_session, init_db
 from app.detail import build_detail
+from app.tz import local_date
 from app.importer import ImportResult, process_gpx, user_gpx_dir
 from app.models import Route, Summit, TrackPoint, User
 from app.queries import user_route_get_or_404
@@ -157,6 +159,15 @@ class AuthGuardMiddleware:
                 headers.setdefault("x-content-type-options", "nosniff")
                 headers.setdefault("x-frame-options", "DENY")
                 headers.setdefault("referrer-policy", "same-origin")
+                # H8: CSP parcial compatible con los inline <script> del
+                # proyecto (sin script-src: un 'unsafe-inline' sería
+                # cosmético). Bloquea plugins, <base> ajena, submits
+                # externos y framing (redundante con X-Frame-Options).
+                headers.setdefault(
+                    "content-security-policy",
+                    "object-src 'none'; base-uri 'self'; "
+                    "form-action 'self'; frame-ancestors 'self'",
+                )
             await send(message)
 
         await self.app(scope, receive, send_wrapper)
@@ -261,12 +272,14 @@ _LOGIN_WINDOW_S = 15 * 60
 
 
 def _login_rate_check(request: Request) -> None:
-    """Lanza 429 si la IP ha hecho más de _LOGIN_MAX intentos en _LOGIN_WINDOW_S."""
+    """Lanza 429 si la IP acumula >= _LOGIN_MAX fallos en _LOGIN_WINDOW_S.
+
+    H6: solo los intentos fallidos consumen presupuesto; los éxitos lo
+    limpian (vía _login_rate_clear). Antes, 5 logins correctos bloqueaban.
+    """
     ip = (request.client.host if request.client else "anon")
     now = _time.time()
-    history = _LOGIN_ATTEMPTS.get(ip, [])
-    # Limpieza: descarta intentos fuera de ventana.
-    history = [t for t in history if now - t < _LOGIN_WINDOW_S]
+    history = [t for t in _LOGIN_ATTEMPTS.get(ip, []) if now - t < _LOGIN_WINDOW_S]
     if len(history) >= _LOGIN_MAX:
         retry_in = int(_LOGIN_WINDOW_S - (now - history[0]))
         raise HTTPException(
@@ -274,8 +287,19 @@ def _login_rate_check(request: Request) -> None:
             detail=f"Demasiados intentos. Espera {retry_in}s.",
             headers={"Retry-After": str(max(retry_in, 1))},
         )
-    history.append(now)
     _LOGIN_ATTEMPTS[ip] = history
+
+
+def _login_rate_fail(request: Request) -> None:
+    """Registra un intento fallido para el rate-limit de /login."""
+    ip = (request.client.host if request.client else "anon")
+    _LOGIN_ATTEMPTS.setdefault(ip, []).append(_time.time())
+
+
+def _login_rate_clear(request: Request) -> None:
+    """Limpia el contador de fallos tras un login correcto."""
+    ip = (request.client.host if request.client else "anon")
+    _LOGIN_ATTEMPTS.pop(ip, None)
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -300,7 +324,7 @@ def login_submit(
     remember: Optional[str] = Form(None),
     db: Session = Depends(get_session),
 ):
-    """Verifica credenciales y abre sesión. Rate-limited a 5/15min por IP."""
+    """Verifica credenciales y abre sesión. Rate-limited a 5 fallos/15min por IP."""
     _login_rate_check(request)
 
     email_norm = (email or "").strip().lower()
@@ -310,6 +334,7 @@ def login_submit(
     if not user or not user.is_active:
         # Igualamos timing verificando contra un hash dummy.
         verify_dummy(pwd)
+        _login_rate_fail(request)
         return templates.TemplateResponse(
             request,
             "login.html",
@@ -319,6 +344,7 @@ def login_submit(
         )
 
     if not verify_password(user.password_hash, pwd):
+        _login_rate_fail(request)
         return templates.TemplateResponse(
             request,
             "login.html",
@@ -327,6 +353,7 @@ def login_submit(
             status_code=401,
         )
 
+    _login_rate_clear(request)
     token = create_session(db, user.id, remember=bool(remember), request=request)
     user.last_login_at = datetime.now(UTC)
     db.commit()
@@ -340,8 +367,13 @@ def logout(
     request: Request,
     db: Session = Depends(get_session),
     mendi_session: Optional[str] = Cookie(default=None, alias=SESSION_COOKIE),
+    _csrf: None = Depends(require_csrf),
 ):
-    """Cierra la sesión actual y borra la cookie. No requiere CSRF (idempotente)."""
+    """Cierra la sesión actual y borra la cookie. Exige CSRF (H5).
+
+    El form de base.html envía el token en el campo `csrf_token`
+    (fallback para urlencoded en require_csrf).
+    """
     if mendi_session:
         revoke_session(db, mendi_session)
     response = RedirectResponse("/login", status_code=303)
@@ -485,6 +517,8 @@ def analisis(
         db, current_user.id, range_key=range, from_date=from_, to_date=to,
     )
     payload = analisis_module.to_json_payload(data)
+    # H1: ver payload_json_for_script (escapa &<> para el bloque |safe).
+    payload_json = analisis_module.payload_json_for_script(payload)
     return templates.TemplateResponse(
         request,
         "analisis.html",
@@ -492,7 +526,7 @@ def analisis(
             request, current_user,
             active_nav="analisis",
             data=data,
-            payload_json=json.dumps(payload, ensure_ascii=False),
+            payload_json=payload_json,
         ),
     )
 
@@ -510,34 +544,51 @@ def api_analisis(
         db, current_user.id, range_key=range, from_date=from_, to_date=to,
     )
     payload = analisis_module.to_json_payload(data)
-    payload["heroStats"] = [
-        {"label": s.label, "value": s.value, "unit": s.unit, "detail": s.detail}
-        for s in data.hero_stats
-    ]
-    payload["zones"] = [
-        {"name": z.name, "count": z.count, "pct": z.pct, "css": z.css_class}
-        for z in data.zones
-    ]
-    payload["topRoutes"] = [
-        {"rank": t.rank, "name": t.name, "origin": t.origin,
-         "reps": t.reps, "totalKm": t.total_km, "barPct": t.bar_pct}
-        for t in data.top_routes
-    ]
-    payload["records"] = [
-        {"label": r.label, "value": r.value, "unit": r.unit,
-         "detail": r.detail, "css": r.css_class}
-        for r in data.records
-    ]
-    payload["calendar"] = [
-        {"year": cy.year,
-         "months": [{"label": m.label, "weeks": m.weeks} for m in cy.months]}
-        for cy in data.calendar
-    ]
-    payload["chips"] = [
-        {"key": c.key, "label": c.label, "selected": c.selected}
-        for c in data.range_chips
-    ]
+    payload.update(_serialize_api_analisis(data))
     return JSONResponse(payload)
+
+
+def _serialize_api_analisis(data) -> dict:
+    """Extras del JSON de /api/analisis sobre el payload HTML (P1: completo).
+
+    Función pura para poder testear el contrato sin servidor.
+    """
+    return {
+        "heroStats": [
+            {"label": s.label, "value": s.value, "unit": s.unit, "detail": s.detail}
+            for s in data.hero_stats
+        ],
+        "zones": [
+            {"name": z.name, "count": z.count, "pct": z.pct, "css": z.css_class,
+             "km": z.km, "barPct": z.bar_pct}
+            for z in data.zones
+        ],
+        "topRoutes": [
+            {"rank": t.rank, "name": t.name, "origin": t.origin,
+             "reps": t.reps, "totalKm": t.total_km, "barPct": t.bar_pct,
+             "lastDateIso": t.last_date_iso, "daysSince": t.days_since,
+             "avgGain": t.avg_gain, "score": t.score, "level": t.level,
+             "levelLabel": t.level_label, "lastDateStr": t.last_date_str,
+             "durationAvg": t.duration_avg, "firstYear": t.first_year,
+             "elevLine": t.elev_line, "elevArea": t.elev_area,
+             "trend": t.trend}
+            for t in data.top_routes
+        ],
+        "records": [
+            {"label": r.label, "value": r.value, "unit": r.unit,
+             "detail": r.detail, "css": r.css_class}
+            for r in data.records
+        ],
+        "calendar": [
+            {"year": cy.year,
+             "months": [{"label": m.label, "weeks": m.weeks} for m in cy.months]}
+            for cy in data.calendar
+        ],
+        "chips": [
+            {"key": c.key, "label": c.label, "selected": c.selected}
+            for c in data.range_chips
+        ],
+    }
 
 
 @app.get("/api/comparator/search")
@@ -578,8 +629,8 @@ def api_comparator_search(
             "name": r.name,
             "origin": _origin_text(r),
             "clusterName": r.name,
-            "date": _fmt_date_es(r.started_at),
-            "dateIso": r.started_at.strftime("%Y-%m-%d") if r.started_at else "",
+            "date": _fmt_date_es(local_date(r.started_at, r.timezone) or r.started_at),
+            "dateIso": (local_date(r.started_at, r.timezone) or r.started_at).strftime("%Y-%m-%d") if r.started_at else "",
             "km": km_val,
             "refKm": round(float(r.distance_km or 0), 2),
             "gain": gain_val,
@@ -622,14 +673,22 @@ async def importar_post(
     _csrf: None = Depends(require_csrf),
 ):
     """Importación batch: procesa todos los GPX y redirige con flash al terminar."""
+    _check_upload_count(files)
     imported = 0
     duplicates = 0
     errors: list[str] = []
 
+    total_bytes = 0
     for upload in files:
         if not upload.filename:
             continue
-        result = process_gpx(db, current_user.id, upload.filename, await upload.read())
+        content = await upload.read()
+        too_big = _check_upload_size(len(content), total_bytes)
+        if too_big is not None:
+            errors.append(f"{upload.filename}: {too_big}")
+            continue
+        total_bytes += len(content)
+        result = process_gpx(db, current_user.id, upload.filename, content)
         if result.status == "ok":
             imported += 1
         elif result.status == "dup":
@@ -660,6 +719,33 @@ async def importar_post(
         return RedirectResponse(f"/importar?fid={fid}", status_code=303)
 
 
+# ===== Límites de subida GPX (H3) =====
+# Sin caps, un lote gigante se bufferiza entero en memoria del worker único.
+MAX_UPLOAD_FILES = 50
+MAX_UPLOAD_FILE_BYTES = 25 * 1024 * 1024
+MAX_UPLOAD_TOTAL_BYTES = 200 * 1024 * 1024
+
+
+def _check_upload_count(files: list[UploadFile]) -> None:
+    """413 si el lote supera el número máximo de ficheros (antes de leer)."""
+    if len(files) > MAX_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Demasiados archivos (máximo {MAX_UPLOAD_FILES}).",
+        )
+
+
+def _check_upload_size(size: int, accumulated: int) -> str | None:
+    """Devuelve mensaje de error si el archivo/total excede el límite, o None."""
+    if size > MAX_UPLOAD_FILE_BYTES:
+        mb = MAX_UPLOAD_FILE_BYTES // (1024 * 1024)
+        return f"archivo demasiado grande (límite {mb} MB)"
+    if accumulated + size > MAX_UPLOAD_TOTAL_BYTES:
+        mb = MAX_UPLOAD_TOTAL_BYTES // (1024 * 1024)
+        return f"lote demasiado grande (límite total {mb} MB)"
+    return None
+
+
 @app.post("/importar/stream")
 async def importar_stream(
     files: list[UploadFile] = File(...),
@@ -673,11 +759,20 @@ async def importar_stream(
     actualizar la UI en tiempo real. Commit por archivo: si uno falla a mitad,
     los anteriores quedan guardados.
     """
+    _check_upload_count(files)
     payloads: list[tuple[str, bytes]] = []
+    total_bytes = 0
+    skipped: list[tuple[str, str]] = []
     for upload in files:
         if not upload.filename:
             continue
-        payloads.append((upload.filename, await upload.read()))
+        content = await upload.read()
+        too_big = _check_upload_size(len(content), total_bytes)
+        if too_big is not None:
+            skipped.append((upload.filename, too_big))
+            continue
+        total_bytes += len(content)
+        payloads.append((upload.filename, content))
 
     user_id = current_user.id
 
@@ -694,6 +789,11 @@ async def importar_stream(
         imported = 0
         duplicates = 0
         errors = 0
+
+        for name, message in skipped:
+            errors += 1
+            yield emit({"type": "error", "i": 0, "name": name,
+                        "message": message})
 
         for i, (filename, content) in enumerate(payloads, start=1):
             yield emit({"type": "file", "i": i, "name": filename, "phase": "leyendo"})
@@ -799,6 +899,8 @@ def api_track(
                 "elev_m": m.elev_m,
                 "km": m.km,
                 "time": m.time_str,
+                # Instante UTC explícito: el cliente lo muestra en hora local.
+                "t": m.time_utc,
             }
             for m in data.map.milestones
         ],
@@ -830,7 +932,9 @@ def api_clima(
         db,
         lat=data.summit_lat,
         lon=data.summit_lon,
-        d=r.started_at.date(),
+        # Fase 2: día LOCAL de la ruta en su zona (antes día UTC: en
+        # madrugadas pedía/archivaba el día anterior).
+        d=local_date(r.started_at, r.timezone) or r.started_at.date(),
     )
     if not payload:
         return JSONResponse({"available": False}, status_code=200)
@@ -844,12 +948,17 @@ def api_clima(
     hike_end = next((p.time for p in reversed(points) if p.time), None)
     summit_pt = max(points, key=lambda p: (p.elevation_m or -9999)) if points else None
     summit_time = summit_pt.time if summit_pt else None
+    # Fase 1: los tiempos en BD son UTC naive; la `Z` evita que el navegador
+    # los interprete como hora local (antes desplazaba la ventana 1-2 h).
+    # `d` sigue siendo fecha UTC (día-frontera: Fase 2 con zona por ruta).
+    def _z(d):
+        return d.strftime("%Y-%m-%dT%H:%M:%SZ") if d else None
     return {
         "available": True,
         "data": payload,
-        "hike_start": hike_start.isoformat() if hike_start else None,
-        "hike_end": hike_end.isoformat() if hike_end else None,
-        "summit_time": summit_time.isoformat() if summit_time else None,
+        "hike_start": _z(hike_start),
+        "hike_end": _z(hike_end),
+        "summit_time": _z(summit_time),
         "summit_lat": data.summit_lat,
         "summit_lon": data.summit_lon,
     }
@@ -1047,7 +1156,8 @@ def api_eliminar(
 class SummitCreatePayload(BaseModel):
     lat: float
     lon: float
-    name: Optional[str] = None
+    # H2: acotado al maxlength=60 del input de detail.js.
+    name: Optional[str] = Field(default=None, max_length=60)
 
     @field_validator("lat")
     @classmethod
@@ -1067,7 +1177,8 @@ class SummitCreatePayload(BaseModel):
 class SummitUpdatePayload(BaseModel):
     lat: Optional[float] = None
     lon: Optional[float] = None
-    name: Optional[str] = None
+    # H2: acotado al maxlength=60 del input de detail.js.
+    name: Optional[str] = Field(default=None, max_length=60)
 
     @field_validator("lat")
     @classmethod
@@ -1338,6 +1449,9 @@ def api_usuarios_reset_password(
         raise HTTPException(status_code=404, detail="Usuario no encontrado.")
     target.password_hash = hash_password(payload.password)
     db.commit()
+    # H10: la password anterior queda inservible y toda sesión abierta con
+    # ella se revoca (si el admin se resetea a sí mismo, deberá re-entrar).
+    revoke_user_sessions(db, target.id)
     return {"ok": True}
 
 

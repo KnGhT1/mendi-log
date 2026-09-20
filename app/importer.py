@@ -8,6 +8,8 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from gpxpy.gpx import GPXException
+
 from app.clustering import assign_cluster_for_new
 from app.db import DATA_DIR
 from app.difficulty import DifficultyInputs, difficulty_level, difficulty_score
@@ -17,6 +19,7 @@ from app.models import Route, Summit, TrackPoint
 from app.name_cleaner import clean_name, detect_region
 from app.summits import fetch_summits
 from app.text_utils import canonical_geo
+from app.tz import resolve_timezone
 
 # Raíz común: los GPX viven en data/gpx/{user_id}/ para aislar por usuario.
 GPX_ROOT = DATA_DIR / "gpx"
@@ -61,9 +64,12 @@ def process_gpx(db: Session, user_id: int, filename: str, content: bytes) -> Imp
 
     try:
         stats = parse_gpx(content)
-    except (ValueError, AttributeError, KeyError) as exc:
+    except (ValueError, AttributeError, KeyError, GPXException) as exc:
         # ValueError: GPX vacío o malformado (lo lanza explícitamente parse_gpx).
         # AttributeError/KeyError: nodos del XML inesperados desde gpxpy.
+        # GPXException: errores de sintaxis XML de gpxpy (GPXXMLSyntaxException)
+        #   y otros fallos propios del parser; sin esto, un XML malformado
+        #   provocaba un 500 en vez de un resultado "error" por archivo.
         return ImportResult(status="error", filename=filename, error_msg=str(exc))
 
     gpx_dir = user_gpx_dir(user_id)
@@ -104,6 +110,9 @@ def process_gpx(db: Session, user_id: int, filename: str, content: bytes) -> Imp
     region = canonical_geo(region)
     sub_region = canonical_geo(sub_region)
 
+    # Fase 2: zona IANA del trailhead (None si no se resuelve -> UTC).
+    timezone = resolve_timezone(stats.start_lat, stats.start_lon)
+
     route = Route(
         user_id=user_id,
         name=clean,
@@ -111,6 +120,7 @@ def process_gpx(db: Session, user_id: int, filename: str, content: bytes) -> Imp
         country=country,
         region=region,
         sub_region=sub_region,
+        timezone=timezone,
         started_at=stats.started_at,
         start_lat=stats.start_lat,
         start_lon=stats.start_lon,
