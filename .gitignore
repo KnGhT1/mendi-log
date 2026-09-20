@@ -41,10 +41,10 @@ build/
 coverage.xml
 htmlcov/
 
-# security audit runs (skill artifacts, local only; anclado para no cazar
-# .agents/skills/security-audit/, que sí se versiona)
+.agents/
+# security audit runs: artefactos locales (hallazgos sobre el código);
+# anclado a raíz para no interferir con otros nombres coincidentes
 /security-audit/
-
 # mypy / pyright
 .mypy_cache/
 .pyright/
