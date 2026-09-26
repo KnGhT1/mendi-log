@@ -45,9 +45,11 @@
   }
   function ovReset() {
     if (ovTitle) ovTitle.textContent = "Procesando GPX…";
-    if (ovSub) ovSub.textContent = "Iniciando…";
+    // Hasta que llegue el primer evento `start` el servidor aún está
+    // recibiendo/parseando el multipart: mostrar fase de subida, no 0/0.
+    if (ovSub) ovSub.textContent = "Subiendo archivos…";
     if (ovFill) ovFill.style.width = "0%";
-    if (ovCounter) ovCounter.textContent = "0 / 0";
+    if (ovCounter) ovCounter.textContent = "";
     if (ovCurrent) ovCurrent.textContent = "";
     if (ovLog) ovLog.innerHTML = "";
     if (ovActions) ovActions.style.display = "none";
@@ -80,9 +82,10 @@
       // de que ningún otro listener (HTMX u otro) procese este submit en
       // paralelo y dispare un POST clásico a /importar que redirija a "/".
       e.stopImmediatePropagation();
-      const fd = new FormData(form);
-      // Si no hay archivos, no hacemos nada (el botón ya estaría deshabilitado)
       const fileInput = form.querySelector('input[type="file"]');
+      // Se construye un FormData por lote en postChunk (no uno global):
+      // el input file se lee abajo vía fileInput.files.
+      // Si no hay archivos, no hacemos nada (el botón ya estaría deshabilitado)
       if (!fileInput || !fileInput.files || !fileInput.files.length) return;
 
       ovReset();
@@ -94,9 +97,36 @@
 
       let total = 0, imported = 0, duplicates = 0, errors = 0;
 
-      try {
+      // Bacheo: el servidor parsea el multipart entero antes del primer
+      // evento, así que un lote gigante deja el modal en "Subiendo…" sin
+      // feedback. Se envía en grupos secuenciales de 5 (punto dulce
+      // observado) con progreso global agregado.
+      const allFiles = Array.from(fileInput.files);
+      const CHUNK = 5;
+      total = allFiles.length;
+      ovCounter.textContent = `0 / ${total}`;
+      ovSub.textContent = total === 1
+        ? "Procesando 1 archivo…"
+        : `Procesando ${total} archivos…`;
+      let doneCount = 0;
+
+      const renderProgress = (i) => {
+        ovCounter.textContent = `${doneCount + i} / ${total}`;
+        ovFill.style.width = `${((doneCount + i) / total) * 100}%`;
+      };
+
+      async function postChunk(chunk, chunkIndex) {
+        const fd = new FormData();
+        chunk.forEach((f) => fd.append("files", f, f.name));
         const resp = await fetch("/importar/stream", { method: "POST", body: fd });
-        if (!resp.ok || !resp.body) throw new Error(resp.statusText || "fallo en el servidor");
+        if (!resp.ok || !resp.body) {
+          let detail = resp.statusText || "fallo en el servidor";
+          try {
+            const data = await resp.clone().json();
+            if (data && data.detail) detail = data.detail;
+          } catch (_) {}
+          throw new Error(`lote ${chunkIndex + 1} (${resp.status}): ${detail}`);
+        }
 
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
@@ -115,42 +145,44 @@
             let ev;
             try { ev = JSON.parse(line); } catch (_) { continue; }
             if (ev.type === "start") {
-              total = ev.total;
-              ovCounter.textContent = `0 / ${total}`;
-              ovSub.textContent = total === 1
-                ? "Procesando 1 archivo…"
-                : `Procesando ${total} archivos…`;
+              // El total del lote ya se mostró arriba; este es por chunk.
+              ovSub.textContent = `Procesando ${total} archivos… (lote ${chunkIndex + 1})`;
             } else if (ev.type === "file") {
               ovCurrent.textContent = `${ev.name} · ${phaseLabel(ev.phase)}`;
             } else if (ev.type === "ok") {
               imported++;
-              ovCounter.textContent = `${ev.i} / ${total}`;
-              ovFill.style.width = `${(ev.i / total) * 100}%`;
+              renderProgress(ev.i);
               logEvent("ok", `✓ ${ev.name_clean || ev.name}`);
             } else if (ev.type === "dup") {
               duplicates++;
-              ovCounter.textContent = `${ev.i} / ${total}`;
-              ovFill.style.width = `${(ev.i / total) * 100}%`;
+              renderProgress(ev.i);
               logEvent("dup", `⊘ ${ev.name} · duplicado de «${ev.existing}»`);
             } else if (ev.type === "error") {
               errors++;
-              ovCounter.textContent = `${ev.i} / ${total}`;
-              ovFill.style.width = `${(ev.i / total) * 100}%`;
+              renderProgress(ev.i || 0);
               logEvent("err", `✗ ${ev.name} · ${ev.message}`);
             } else if (ev.type === "done") {
-              ovTitle.textContent = "Importación completada";
-              const parts = [];
-              if (ev.imported) parts.push(`${ev.imported} importadas`);
-              if (ev.duplicates) parts.push(`${ev.duplicates} duplicadas`);
-              if (ev.errors) parts.push(`${ev.errors} con error`);
-              ovSub.textContent = parts.join(" · ") || "Sin cambios";
-              ovCurrent.textContent = "";
-              ovFill.style.width = "100%";
-              if (ovSpinner) ovSpinner.style.display = "none";
-              if (ovActions) ovActions.style.display = "";
+              // Resumen parcial: el final se compone al terminar todos.
+              doneCount += (ev.imported || 0) + (ev.duplicates || 0) + (ev.errors || 0);
             }
           }
         }
+      }
+
+      try {
+        for (let c = 0; c < allFiles.length; c += CHUNK) {
+          await postChunk(allFiles.slice(c, c + CHUNK), c / CHUNK);
+        }
+        ovTitle.textContent = "Importación completada";
+        const parts = [];
+        if (imported) parts.push(`${imported} importadas`);
+        if (duplicates) parts.push(`${duplicates} duplicadas`);
+        if (errors) parts.push(`${errors} con error`);
+        ovSub.textContent = parts.join(" · ") || "Sin cambios";
+        ovCurrent.textContent = "";
+        ovFill.style.width = "100%";
+        if (ovSpinner) ovSpinner.style.display = "none";
+        if (ovActions) ovActions.style.display = "";
       } catch (err) {
         ovTitle.textContent = "Error en la importación";
         ovSub.textContent = (err && err.message) || "fallo de red";

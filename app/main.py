@@ -1,7 +1,9 @@
 """Aplicacion FastAPI."""
 from __future__ import annotations
 
+import anyio
 import json
+import logging
 import secrets
 import time as _time
 from contextlib import asynccontextmanager
@@ -58,7 +60,7 @@ from app.auth import (
     verify_dummy,
     verify_password,
 )
-from app.db import commit as _db_commit, get_session, init_db
+from app.db import SessionLocal, commit as _db_commit, get_session, init_db
 from app.detail import build_detail
 from app.tz import local_date
 from app.importer import ImportResult, process_gpx, user_gpx_dir
@@ -68,6 +70,8 @@ from app.queries import user_route_get_or_404
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
 STATIC_DIR = PROJECT_ROOT / "static"
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -693,7 +697,13 @@ async def importar_post(
             errors.append(f"{upload.filename}: {too_big}")
             continue
         total_bytes += len(content)
-        result = process_gpx(db, current_user.id, upload.filename, content)
+        try:
+            result = await anyio.to_thread.run_sync(
+                _process_gpx_in_thread, current_user.id, upload.filename, content
+            )
+        except Exception as exc:  # noqa: BLE001 — no colgar el batch por un archivo
+            errors.append(f"{upload.filename}: fallo interno: {exc}")
+            continue
         if result.status == "ok":
             imported += 1
         elif result.status == "dup":
@@ -704,7 +714,7 @@ async def importar_post(
         else:
             errors.append(f"{result.filename}: {result.error_msg}")
 
-    _commit(db, invalidate=bool(imported), user_id=current_user.id)
+    # Commits ya hechos por archivo en el worker (con invalidación).
 
     msg_parts: list[str] = []
     if imported:
@@ -726,6 +736,9 @@ async def importar_post(
 
 # ===== Límites de subida GPX (H3) =====
 # Sin caps, un lote gigante se bufferiza entero en memoria del worker único.
+# Nota: el `max_part_size` de Starlette solo limita campos de texto, NO los
+# ficheros (van a SpooledTemporaryFile sin tope); estos caps tras la lectura
+# son la única enforcement real de tamaño.
 MAX_UPLOAD_FILES = 50
 MAX_UPLOAD_FILE_BYTES = 25 * 1024 * 1024
 MAX_UPLOAD_TOTAL_BYTES = 200 * 1024 * 1024
@@ -751,8 +764,31 @@ def _check_upload_size(size: int, accumulated: int) -> str | None:
     return None
 
 
+def _process_gpx_in_thread(user_id: int, filename: str, content: bytes) -> ImportResult:
+    """Procesa un GPX en hilo worker con sesión SQL propia + commit.
+
+    `process_gpx` hace parse CPU + sleep/httpx bloqueantes y usa flush();
+    ejecutarlo en el loop con `--workers 1` secuestra el servidor durante
+    minutos con lotes grandes. La sesión del request no es thread-safe, así
+    que el worker abre la suya y commitea (con invalidación por usuario);
+    el hilo principal solo emite eventos. Devuelve ImportResult con tipos
+    planos (seguro entre hilos).
+    """
+    tdb = SessionLocal()
+    try:
+        result = process_gpx(tdb, user_id, filename, content)
+        if result.status == "ok":
+            _db_commit(tdb, invalidate_analisis=True, user_id=user_id)
+        else:
+            tdb.rollback()
+        return result
+    finally:
+        tdb.close()
+
+
 @app.post("/importar/stream")
 async def importar_stream(
+    request: Request,
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_session),
     current_user: User = Depends(require_writer),
@@ -762,7 +798,8 @@ async def importar_stream(
 
     Cada línea es un evento JSON que el cliente lee con `ReadableStream` para
     actualizar la UI en tiempo real. Commit por archivo: si uno falla a mitad,
-    los anteriores quedan guardados.
+    los anteriores quedan guardados. Si el cliente aborta, se deja de
+    procesar para no secuestrar el worker único en vano.
     """
     _check_upload_count(files)
     payloads: list[tuple[str, bytes]] = []
@@ -780,6 +817,11 @@ async def importar_stream(
         payloads.append((upload.filename, content))
 
     user_id = current_user.id
+    t_recv = _time.time()
+    logger.info(
+        "[importar/stream] user=%d archivos=%d bytes=%d",
+        user_id, len(payloads), total_bytes,
+    )
 
     async def generate():
         import asyncio
@@ -790,6 +832,10 @@ async def importar_stream(
         total = len(payloads)
         yield emit({"type": "start", "total": total})
         await asyncio.sleep(0)
+        logger.info(
+            "[importar/stream] user=%d primer byte tras %.1fs",
+            user_id, _time.time() - t_recv,
+        )
 
         imported = 0
         duplicates = 0
@@ -801,10 +847,26 @@ async def importar_stream(
                         "message": message})
 
         for i, (filename, content) in enumerate(payloads, start=1):
+            if await request.is_disconnected():
+                break
             yield emit({"type": "file", "i": i, "name": filename, "phase": "leyendo"})
             await asyncio.sleep(0)
 
-            result: ImportResult = process_gpx(db, user_id, filename, content)
+            try:
+                t0 = _time.time()
+                result: ImportResult = await anyio.to_thread.run_sync(
+                    _process_gpx_in_thread, user_id, filename, content
+                )
+                logger.info(
+                    "[importar/stream] user=%d archivo %d/%d %s: %s (%.1fs)",
+                    user_id, i, total, filename, result.status,
+                    _time.time() - t0,
+                )
+            except Exception as exc:  # noqa: BLE001 — un fallo inesperado no debe colgar el stream
+                errors += 1
+                yield emit({"type": "error", "i": i, "name": filename,
+                            "message": f"fallo interno: {exc}"})
+                continue
 
             if result.status == "skipped":
                 errors += 1
@@ -824,7 +886,7 @@ async def importar_stream(
                             "message": result.error_msg})
                 continue
 
-            _commit(db, invalidate=True, user_id=user_id)
+            # Commit ya hecho en el worker (con invalidación por usuario).
             imported += 1
             yield emit({"type": "ok", "i": i, "name": filename,
                         "route_id": result.route_id, "name_clean": result.name_clean})
@@ -836,6 +898,10 @@ async def importar_stream(
             "duplicates": duplicates,
             "errors": errors,
         })
+        logger.info(
+            "[importar/stream] user=%d fin: %d ok, %d dup, %d errores (%.1fs total)",
+            user_id, imported, duplicates, errors, _time.time() - t_recv,
+        )
 
     return StreamingResponse(
         generate(),
@@ -1080,7 +1146,8 @@ def eliminar(
 
 
 @app.post("/api/reprocesar")
-def api_reprocesar(
+async def api_reprocesar(
+    request: Request,
     db: Session = Depends(get_session),
     current_user: User = Depends(require_writer),
     _csrf: None = Depends(require_csrf),
@@ -1088,9 +1155,11 @@ def api_reprocesar(
     """Reprocesa todas las rutas del usuario desde los GPX en disco. Streaming NDJSON."""
     user_id = current_user.id
 
-    def generate():
+    async def generate():
         updated = 0
         for line in maintenance_module.reprocesar_stream(db, user_id):
+            if await request.is_disconnected():
+                break
             try:
                 ev = json.loads(line)
                 if ev.get("type") == "done":
@@ -1108,7 +1177,8 @@ def api_reprocesar(
 
 
 @app.post("/api/backfill-regions")
-def api_backfill_regions(
+async def api_backfill_regions(
+    request: Request,
     db: Session = Depends(get_session),
     current_user: User = Depends(require_writer),
     _csrf: None = Depends(require_csrf),
@@ -1116,9 +1186,11 @@ def api_backfill_regions(
     """Completa zonas faltantes con geocodificación — acotado al usuario. Streaming NDJSON."""
     user_id = current_user.id
 
-    def generate():
+    async def generate():
         updated = 0
         for line in maintenance_module.backfill_stream(db, user_id):
+            if await request.is_disconnected():
+                break
             try:
                 ev = json.loads(line)
                 if ev.get("type") == "done":
