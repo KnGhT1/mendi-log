@@ -120,7 +120,6 @@ html[data-theme="dark"] {
   --tag-vh-bg: rgba(228,120,98,0.07);
   --tag-vh-border: rgba(228,120,98,0.3);
   --topbar-bg: rgba(10, 14, 20, 0.7);
-  --donut-track: var(--surface-2);
   --cal-empty: var(--surface-2);
   --cal-1: rgba(181,209,122,0.18);
   --cal-2: rgba(181,209,122,0.42);
@@ -161,12 +160,12 @@ html[data-theme="light"] {
   --tag-vh-bg: rgba(199,90,68,0.08);
   --tag-vh-border: rgba(199,90,68,0.4);
   --topbar-bg: rgba(250, 250, 247, 0.85);
-  --donut-track: #ECE8DC;
   --cal-empty: #F1EDE0;
   --cal-1: rgba(110,136,71,0.18);
   --cal-2: rgba(110,136,71,0.4);
   --cal-3: rgba(110,136,71,0.65);
   --cal-4: var(--accent);
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.04), 0 8px 28px -16px rgba(0,0,0,0.18);
 }
 
 :root {
@@ -178,6 +177,71 @@ html[data-theme="light"] {
   --font-serif: var(--serif);
   /* sombra de tarjeta — definida aquí para que styles.css no dependa de detail.css */
   --shadow-card: 0 1px 0 rgba(255,255,255,0.02) inset, 0 12px 40px -16px rgba(0,0,0,0.5);
+  /* anillo de foco único (antes rgba literales dispersos por fichero) */
+  --focus-ring: 0 0 0 3px rgba(181,209,122,0.12);
+  /* overlay de bloqueo (sidebar drawer + import): mismo velo */
+  --overlay-bg: rgba(0, 0, 0, 0.55);
+  /* roles: paleta propia intencionada (dorado admin, menta user), fuera de
+     la escala de dificultad; con token para que ambos temas la compartan */
+  --role-admin: #c39c00;
+  --role-admin-soft: rgba(195, 156, 0, 0.08);
+  --role-admin-border: rgba(195, 156, 0, 0.45);
+  --role-user-soft: rgba(0, 200, 120, 0.08);
+  --role-user-border: rgba(0, 200, 120, 0.4);
+  /* resaltado de búsqueda */
+  --mark-hl: rgba(181, 209, 122, 0.22);
+  /* radios de tarjeta (antes 8/10/12/14/18px literales por variante) */
+  --card-radius-sm: 10px;
+  --card-radius-md: 12px;
+  --card-radius-lg: 14px;
+  --card-radius-xl: 18px;
+}
+
+/* Base de tarjetas (C4): fondo y borde compartidos. Cada variante conserva
+   solo su radio (token --card-radius-*) y su padding. Excepciones
+   documentadas: .modal (borde-2 + sombra propia), .elev-card (sin radio). */
+.card,
+.chart-card,
+.table-card,
+.dup-group,
+.related-card,
+.login-card,
+.import-overlay-card,
+.map-card,
+.elev-card,
+.wx-card,
+.notes-card,
+.featured-card,
+.ana-card,
+.ana-evo-card,
+.ana-scatter-card,
+.ana-cmp-chart-card,
+.ana-rec,
+.ana-cal-wrap,
+.ana-heatmap-wrap,
+.ana-zones,
+.ana-empty-card,
+.ana-cmp-table,
+.route-row,
+.tech-grid {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+/* Base de flotantes (C5): panel absoluto compartido por popovers,
+   desplegables y combos. Cada variante conserva solo su geometría
+   propia (posición, tamaño, radio específico); la sombra clara vive
+   en el override light de .popover. */
+.popover {
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px -12px rgba(0,0,0,0.5),
+              0 4px 12px rgba(0,0,0,0.2);
+}
+html[data-theme="light"] .popover {
+  box-shadow: 0 16px 48px -12px rgba(0,0,0,0.18),
+              0 4px 12px rgba(0,0,0,0.06);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -210,7 +274,7 @@ a { color: inherit; text-decoration: none; }
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay-bg);
   z-index: 99;
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
@@ -479,14 +543,14 @@ a { color: inherit; text-decoration: none; }
   color: var(--text-muted);
 }
 .role-chip.role-admin {
-  color: #c39c00;
-  border-color: rgba(195, 156, 0, 0.45);
-  background: rgba(195, 156, 0, 0.08);
+  color: var(--role-admin);
+  border-color: var(--role-admin-border);
+  background: var(--role-admin-soft);
 }
 .role-chip.role-user {
   color: var(--accent);
-  border-color: rgba(0, 200, 120, 0.4);
-  background: rgba(0, 200, 120, 0.08);
+  border-color: var(--role-user-border);
+  background: var(--role-user-soft);
 }
 .role-chip.role-viewer {
   color: var(--text-muted);
@@ -767,9 +831,7 @@ a { color: inherit; text-decoration: none; }
 }
 .legend-dot::before {
   content: '';
-  width: 9px; height: 9px;
-  border-radius: 50%;
-  display: inline-block;
+  /* geometría en el sistema único de puntos (ver .tag) */
 }
 .legend-dot.easy::before { background: var(--easy); }
 .legend-dot.moderate::before { background: var(--moderate); }
@@ -784,9 +846,7 @@ a { color: inherit; text-decoration: none; }
   min-width: 0;
 }
 .chart-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--card-radius-sm);
   padding: 22px 24px 20px;
 }
 .chart-card-head {
@@ -847,9 +907,7 @@ a { color: inherit; text-decoration: none; }
 
 /* ===== Table ===== */
 .table-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--card-radius-sm);
   overflow: hidden;
 }
 table { width: 100%; border-collapse: collapse; }
@@ -898,6 +956,23 @@ td.num { font-family: var(--mono); }
 .tag.moderate { color: var(--moderate); border-color: var(--tag-mod-border); background: var(--tag-mod-bg); }
 .tag.hard { color: var(--hard); border-color: var(--tag-hard-border); background: var(--tag-hard-bg); }
 .tag.very-hard { color: var(--very-hard); border-color: var(--tag-vh-border); background: var(--tag-vh-bg); }
+
+/* Sistema único de puntos de nivel (C1): geometría compartida.
+   Los nombres legacy se congelan (los usan templates/JS) pero ya solo
+   aportan el color; el tamaño/forma vive aquí. Excluidos a propósito:
+   .ana-zone-dot/.ana-evo-dot (escala heat, cuadrados) y .evo-dot
+   (círculos SVG consultados por JS). */
+.legend-dot::before,
+.chip .dot,
+.ana-dot,
+.ana-donut-dot,
+.ana-ratio-dot,
+.hero-tag .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
 
 /* ===== Calendar ===== */
 .cal-heatmap {
@@ -1088,22 +1163,30 @@ td.num { font-family: var(--mono); }
   letter-spacing: -0.01em;
 }
 .empty p { margin-bottom: 24px; font-size: 13.5px; }
-.btn {
+/* Núcleo compartido de botones (C5): layout y tipografía. Cada variante
+   conserva solo su caja y sus colores. */
+.btn,
+.btn-primary,
+.btn-ghost {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  border-radius: 7px;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  cursor: pointer;
+  text-decoration: none;
+  transition: filter 0.15s, background 0.15s, color 0.15s, border-color 0.15s;
+}
+.btn {
   background: var(--accent);
   color: var(--bg);
   border: none;
   padding: 10px 18px;
-  border-radius: 7px;
-  font-family: var(--mono);
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: filter 0.15s;
 }
 .btn:hover { filter: brightness(1.08); }
 .btn.btn-ghost {
@@ -1172,11 +1255,11 @@ td.num { font-family: var(--mono); }
   scrollbar-width: thin;
   scrollbar-color: var(--border-2) transparent;
 }
-.dropzone .filelist::-webkit-scrollbar { width: 8px; }
+.dropzone .filelist::-webkit-scrollbar { width: 6px; }
 .dropzone .filelist::-webkit-scrollbar-track { background: transparent; }
 .dropzone .filelist::-webkit-scrollbar-thumb {
   background: var(--border-2);
-  border-radius: 4px;
+  border-radius: 3px;
 }
 .dropzone .filelist:empty { display: none; }
 .dropzone .filelist .fname {
@@ -1250,7 +1333,7 @@ td.num { font-family: var(--mono); }
 .import-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay-bg);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   display: flex;
@@ -1266,9 +1349,7 @@ td.num { font-family: var(--mono); }
   pointer-events: auto;
 }
 .import-overlay-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--card-radius-md);
   padding: 32px 40px;
   max-width: 420px;
   text-align: center;
@@ -1375,11 +1456,9 @@ td.num { font-family: var(--mono); }
 
 /* ===== Grupos de duplicados (pestaña Duplicados) ===== */
 .dup-group {
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--card-radius-sm);
   padding: 12px 14px;
   margin-bottom: 10px;
-  background: var(--surface);
 }
 .dup-group-hash {
   font-family: var(--mono);
@@ -1586,12 +1665,12 @@ tr.recent-route-row:hover td { background: var(--surface-2); }
   display: flex; gap: 12px; align-items: center; flex-wrap: nowrap;
   border-bottom: 1px solid var(--border);
   background: var(--bg-2);
-  /* Se ancla bajo el topbar (sticky a 0). top=60px ≈ alto del topbar
+  /* Se ancla bajo el topbar (sticky a 0). top=61px = alto del topbar
      (14px + 32px botón + 14px + 1px borde). Si cambia, ajusta aquí.
      z-index 9 = justo por debajo del topbar (10) y por encima del
      contenido de la lista. */
   position: sticky;
-  top: 60px;
+  top: 61px;
   z-index: 9;
 }
 .filter-bar .filter-group { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
@@ -1642,21 +1721,12 @@ tr.recent-route-row:hover td { background: var(--surface-2); }
   left: 0;
   z-index: 50;
   width: 380px;
-  background: var(--surface);
-  border: 1px solid var(--border-2);
-  border-radius: 10px;
   padding: 18px 18px 16px;
-  box-shadow: 0 16px 48px -12px rgba(0,0,0,0.5),
-              0 4px 12px rgba(0,0,0,0.2);
   display: none;
   flex-direction: column;
   gap: 16px;
 }
 .filters-popover.open { display: flex; }
-html[data-theme="light"] .filters-popover {
-  box-shadow: 0 16px 48px -12px rgba(0,0,0,0.18),
-              0 4px 12px rgba(0,0,0,0.06);
-}
 .filters-popover::before {
   content: '';
   position: absolute;
@@ -1726,12 +1796,10 @@ html[data-theme="light"] .filters-popover {
   top: 100%;
   left: 0; right: 0;
   z-index: 60;
-  background: var(--surface);
-  border: 1px solid var(--accent);
+  border-color: var(--accent);
   border-top: none;
   border-bottom-left-radius: 7px;
   border-bottom-right-radius: 7px;
-  box-shadow: 0 8px 24px -8px rgba(0,0,0,0.4);
   overflow: hidden;
 }
 .region-combo-dropdown.open { display: block; }
@@ -1813,7 +1881,7 @@ html[data-theme="light"] .filters-popover {
 .search-input:hover { border-color: var(--text-dim); }
 .search-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(181,209,122,0.12);
+  box-shadow: var(--focus-ring);
 }
 .search-icon {
   position: absolute;
@@ -1891,7 +1959,7 @@ html[data-theme="light"] .filters-popover {
 }
 .date-range-wrap:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(181,209,122,0.10);
+  box-shadow: var(--focus-ring);
 }
 .ctrl-date {
   appearance: none;
@@ -1959,7 +2027,7 @@ html[data-theme="light"] .ctrl-date { color-scheme: light; }
 .chip.active {
   background: var(--surface-2); border-color: var(--text-muted); color: var(--text);
 }
-.chip .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.chip .dot { /* geometría en el sistema único de puntos (ver .tag) */ }
 .chip.active.diff-easy { border-color: var(--easy); background: var(--tag-easy-bg); color: var(--easy); }
 .chip.active.diff-mod  { border-color: var(--moderate); background: var(--tag-mod-bg); color: var(--moderate); }
 .chip.active.diff-hard { border-color: var(--hard); background: var(--tag-hard-bg); color: var(--hard); }
@@ -1972,9 +2040,7 @@ html[data-theme="light"] .ctrl-date { color-scheme: light; }
 /* ===== Featured card (Última actividad) ===== */
 .featured-section { padding: 40px; border-bottom: 1px solid var(--border); overflow-x: hidden; }
 .featured-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--card-radius-md);
   overflow: hidden;
   box-shadow: var(--shadow-card);
   display: grid;
@@ -2017,22 +2083,17 @@ html[data-theme="light"] .ctrl-date { color-scheme: light; }
 .btn-primary {
   background: var(--accent); color: var(--bg);
   border: none; height: 36px; padding: 0 18px;
-  border-radius: 7px; font-family: var(--mono); font-size: 11.5px;
-  text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 8px;
-  font-weight: 500; transition: all 0.15s;
-  text-decoration: none;
+  font-size: 11.5px;
+  letter-spacing: 0.1em;
+  font-weight: 500;
 }
 .btn-primary:hover { background: var(--accent-deep); }
 .btn-primary svg { width: 13px; height: 13px; }
 .btn-ghost {
   background: transparent; color: var(--text-muted);
   border: 1px solid var(--border-2); height: 36px; padding: 0 14px;
-  border-radius: 7px; font-family: var(--mono); font-size: 11px;
-  text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer;
-  transition: all 0.15s;
-  text-decoration: none;
-  display: inline-flex; align-items: center;
+  font-size: 11px;
+  letter-spacing: 0.1em;
 }
 .btn-ghost:hover { color: var(--text); border-color: var(--text-dim); }
 
@@ -2183,9 +2244,7 @@ html[data-theme="light"] .ctrl-date { color-scheme: light; }
   gap: 12px;
 }
 .route-row {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--card-radius-sm);
   padding: 22px 24px;
   display: grid;
   grid-template-columns: 56px 1.2fr 2fr 1fr 120px;
@@ -2196,6 +2255,7 @@ html[data-theme="light"] .ctrl-date { color-scheme: light; }
   text-decoration: none;
   color: inherit;
 }
+.route-row > * { min-width: 0; }
 .route-row:hover {
   border-color: var(--border-2);
   transform: translateY(-1px);
@@ -2283,7 +2343,7 @@ html[data-theme="light"] .ctrl-date { color-scheme: light; }
 
 /* mark de búsqueda */
 mark.search-hl {
-  background: rgba(181,209,122,0.22);
+  background: var(--mark-hl);
   color: inherit; padding: 0 2px; border-radius: 2px;
 }
 

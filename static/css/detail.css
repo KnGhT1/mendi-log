@@ -2,12 +2,8 @@
    mendi.log · detail
    Estilos especificos de /rutas/{id} (mockup detalle).
    Las variables de color, tipografia y reset viven en styles.css
+   (incluido --shadow-card en ambos temas: este fichero no define tokens).
    ============================================================ */
-
-:root {}
-html[data-theme="light"] {
-  --shadow-card: 0 1px 2px rgba(0,0,0,0.04), 0 8px 28px -16px rgba(0,0,0,0.18);
-}
 
 /* ===== topbar extras ===== */
 .nav-pair { display: inline-flex; }
@@ -128,9 +124,7 @@ html[data-theme="light"] {
   margin-left: 6px;
 }
 .hero-tag .dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
+  /* geometría en el sistema único de puntos (styles.css: .tag) */
 }
 .hero-tag.easy {
   color: var(--easy);
@@ -213,9 +207,7 @@ html[data-theme="light"] {
 
 /* ===== 01 · MAPA ===== */
 .map-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--card-radius-md);
   overflow: hidden;
   box-shadow: var(--shadow-card);
   display: grid;
@@ -286,12 +278,12 @@ html[data-theme="light"] {
 .marker-pin.start {
   color: var(--accent);
   border-color: var(--accent);
-  background: rgba(181,209,122,0.1);
+  background: var(--tag-mod-bg);
 }
 .marker-pin.summit {
   color: var(--accent-warm);
   border-color: var(--accent-warm);
-  background: rgba(232,184,109,0.1);
+  background: var(--tag-hard-bg);
 }
 .marker-pin.end {
   color: var(--text-muted);
@@ -368,8 +360,6 @@ html[data-theme="light"] .marker-pin.summit { background: rgba(184,133,63,0.12);
 
 /* ===== 02 · PERFIL DE ELEVACION ===== */
 .elev-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
   box-shadow: var(--shadow-card);
   overflow: hidden;
 }
@@ -463,11 +453,10 @@ html[data-theme="light"] .marker-pin.summit { background: rgba(184,133,63,0.12);
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 0;
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--card-radius-md);
   overflow: hidden;
-  background: var(--surface);
 }
+.tech-grid > * { min-width: 0; }
 .tech-cell {
   padding: 18px 22px;
   border-right: 1px solid var(--border);
@@ -503,9 +492,7 @@ html[data-theme="light"] .marker-pin.summit { background: rgba(184,133,63,0.12);
 
 /* ===== 04 · WEATHER ===== */
 .wx-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--card-radius-md);
   overflow: hidden;
   box-shadow: var(--shadow-card);
 }
@@ -703,9 +690,7 @@ html[data-theme="light"] .marker-pin.summit { background: rgba(184,133,63,0.12);
   gap: 20px;
 }
 .notes-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--card-radius-md);
   padding: 24px 26px;
   box-shadow: var(--shadow-card);
 }
@@ -940,9 +925,7 @@ html[data-theme="light"] .marker-pin.summit { background: rgba(184,133,63,0.12);
   gap: 14px;
 }
 .related-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--card-radius-sm);
   padding: 18px 20px;
   display: flex;
   flex-direction: column;
@@ -1034,7 +1017,7 @@ html[data-theme="light"] .marker-pin.summit { background: rgba(184,133,63,0.12);
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay-bg);
   backdrop-filter: blur(4px);
   z-index: 1000;
   display: grid;

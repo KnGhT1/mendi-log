@@ -131,7 +131,7 @@
 }
 .ana-top10-wrap::-webkit-scrollbar { width: 6px; }
 .ana-top10-wrap::-webkit-scrollbar-track { background: transparent; }
-.ana-top10-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.ana-top10-wrap::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 3px; }
 
 
 .ana-empty {
@@ -139,9 +139,7 @@
   min-height: 60vh;
 }
 .ana-empty-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: var(--card-radius-xl);
   padding: 48px 56px;
   text-align: center;
   max-width: 440px;
@@ -274,8 +272,7 @@
 /* ===================== SECCIÓN GENÉRICA ===================== */
 /* Reutiliza .section y .section-head de styles.css. */
 .ana-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 14px; padding: 18px;
+  border-radius: var(--card-radius-lg); padding: 18px;
 }
 .ana-card h3 {
   margin: 0 0 12px; font-family: var(--serif); font-weight: 400;
@@ -292,8 +289,7 @@
 }
 @media (max-width: 980px) { .ana-heatmap-grid { grid-template-columns: 1fr; } }
 .ana-heatmap-wrap {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 14px; overflow: hidden; position: relative;
+  border-radius: var(--card-radius-lg); overflow: hidden; position: relative;
   isolation: isolate;
 }
 .ana-heatmap {
@@ -311,8 +307,7 @@
   background: linear-gradient(to right, #7DAFC9, #B5D17A, #E8B86D, #E47862);
 }
 .ana-zones {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 14px; padding: 16px 18px;
+  border-radius: var(--card-radius-lg); padding: 16px 18px;
   height: 460px;
   display: flex;
   flex-direction: column;
@@ -410,7 +405,7 @@
   display: grid; grid-template-columns: 14px 1fr auto auto; gap: 8px;
   align-items: center; font-size: 13px;
 }
-.ana-ratio-dot { width: 10px; height: 10px; border-radius: 3px; }
+.ana-ratio-dot { /* geometría en el sistema único (styles.css: .tag) */ }
 .ana-ratio-warm   { background: var(--accent-warm, #E8B86D); }
 .ana-ratio-accent { background: var(--accent, #B5D17A); }
 .ana-ratio-cool   { background: var(--accent-cool, #7DAFC9); }
@@ -539,15 +534,15 @@
   border: 1px solid var(--border);
   font-size: 10px; letter-spacing: .04em;
 }
-.ana-top-level-easy      { color: var(--easy,      #7DAFC9); border-color: rgba(125, 175, 201, 0.4); }
-.ana-top-level-moderate  { color: var(--moderate,  #B5D17A); border-color: rgba(181, 209, 122, 0.4); }
-.ana-top-level-hard      { color: var(--hard,      #E8B86D); border-color: rgba(232, 184, 109, 0.4); }
-.ana-top-level-very-hard { color: var(--very-hard, #E47862); border-color: rgba(228, 120, 98, 0.4); }
+/* Variante compacta de .tag (styles.css): mismos tokens por nivel. */
+.ana-top-level-easy      { color: var(--easy);      border-color: var(--tag-easy-border); background: var(--tag-easy-bg); }
+.ana-top-level-moderate  { color: var(--moderate);  border-color: var(--tag-mod-border);  background: var(--tag-mod-bg); }
+.ana-top-level-hard      { color: var(--hard);      border-color: var(--tag-hard-border); background: var(--tag-hard-bg); }
+.ana-top-level-very-hard { color: var(--very-hard); border-color: var(--tag-vh-border);   background: var(--tag-vh-bg); }
 
 /* ===================== 03 · EVOLUCIÓN ===================== */
 .ana-evo-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 14px; padding: 18px;
+  border-radius: var(--card-radius-lg); padding: 18px;
 }
 .ana-evo-legend {
   display: flex; flex-wrap: wrap; gap: 18px; row-gap: 8px; margin-bottom: 14px;
@@ -650,7 +645,7 @@
   display: grid; grid-template-columns: 12px 1fr auto auto; gap: 8px;
   align-items: center; font-size: 13px;
 }
-.ana-donut-dot { width: 10px; height: 10px; border-radius: 3px; }
+.ana-donut-dot { /* geometría en el sistema único (styles.css: .tag) */ }
 .ana-donut-easy      { background: var(--easy,      #7DAFC9); }
 .ana-donut-moderate  { background: var(--moderate,  #B5D17A); }
 .ana-donut-hard      { background: var(--hard,      #E8B86D); }
@@ -665,8 +660,7 @@
 
 /* ===================== 05 · SCATTER ===================== */
 .ana-scatter-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 14px; padding: 18px;
+  border-radius: var(--card-radius-lg); padding: 18px;
 }
 .ana-scatter { width: 100%; height: 380px; display: block; overflow: hidden; }
 .ana-scatter-legend {
@@ -674,7 +668,7 @@
   font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
 }
 .ana-scatter-legend span { display: inline-flex; align-items: center; gap: 6px; }
-.ana-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.ana-dot { display: inline-block; /* tamaño en el sistema único */ }
 .ana-dot-easy      { background: var(--easy,      #7DAFC9); }
 .ana-dot-moderate  { background: var(--moderate,  #B5D17A); }
 .ana-dot-hard      { background: var(--hard,      #E8B86D); }
@@ -692,8 +686,7 @@
 }
 @media (max-width: 900px) { .ana-records { grid-template-columns: repeat(2, 1fr); } }
 .ana-rec {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 14px; padding: 22px;
+  border-radius: var(--card-radius-lg); padding: 22px;
   position: relative; overflow: hidden;
 }
 .ana-rec::before {
@@ -727,8 +720,7 @@
 
 /* ===================== 07 · CALENDARIO ===================== */
 .ana-cal-wrap {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 14px; padding: 22px;
+  border-radius: var(--card-radius-lg); padding: 22px;
   display: grid; gap: 14px;
 }
 .ana-cal-scroll {
@@ -741,11 +733,11 @@
   scrollbar-width: thin;
   scrollbar-color: var(--border-2, var(--border)) transparent;
 }
-.ana-cal-scroll::-webkit-scrollbar { width: 8px; }
+.ana-cal-scroll::-webkit-scrollbar { width: 6px; }
 .ana-cal-scroll::-webkit-scrollbar-track { background: transparent; }
 .ana-cal-scroll::-webkit-scrollbar-thumb {
   background: var(--border-2, var(--border));
-  border-radius: 4px;
+  border-radius: 3px;
 }
 .ana-cal-year + .ana-cal-year {
   padding-top: 14px;
@@ -870,8 +862,7 @@
 }
 
 .ana-cmp-chart-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 14px; padding: 16px 18px;
+  border-radius: var(--card-radius-lg); padding: 16px 18px;
 }
 .ana-cmp-chart-head {
   display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: center;
@@ -909,8 +900,7 @@
 }
 
 .ana-cmp-table {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 14px; overflow: hidden;
+  border-radius: var(--card-radius-lg); overflow: hidden;
 }
 .ana-cmp-row {
   display: grid; grid-template-columns: 130px 1fr 1fr;
@@ -966,10 +956,8 @@
 .ana-combo-list {
   position: absolute; left: 0; right: 0; top: calc(100% + 4px);
   max-height: 220px; overflow: auto;
-  background: var(--surface); border: 1px solid var(--border);
   border-radius: 8px;
   display: none; z-index: 50;
-  box-shadow: 0 8px 22px rgba(0,0,0,.18);
 }
 .ana-combo.is-open .ana-combo-list { display: block; }
 .ana-combo-item {

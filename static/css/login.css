@@ -1,7 +1,7 @@
 /* ============================================================
    Login: centrado en pantalla, reutiliza las CSS vars de styles.css
-   (--bg, --panel, --border, --text, --muted, --accent, etc.) para
-   que el tema claro/oscuro funcione sin duplicar tokens.
+   (--bg, --surface, --border, --text, --text-muted, --accent, etc.)
+   para que el tema claro/oscuro funcione sin duplicar tokens.
    ============================================================ */
 
 .login-body {
@@ -9,7 +9,7 @@
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-sans);
+  font-family: var(--sans);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -24,9 +24,7 @@
 
 .login-card {
   position: relative;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--card-radius-md);
   padding: 32px 28px 24px;
   box-shadow: 0 2px 24px rgba(0, 0, 0, 0.18);
 }
@@ -47,13 +45,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--font-serif, var(--font-sans));
+  font-family: var(--serif);
   font-weight: 600;
   font-size: 18px;
 }
 
 .login-brand .brand-name {
-  font-family: var(--font-serif, var(--font-sans));
+  font-family: var(--serif);
   font-size: 20px;
   font-weight: 500;
   letter-spacing: -0.01em;
@@ -62,17 +60,17 @@
 .login-tagline {
   margin: 0 0 28px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text-muted);
   font-family: var(--font-mono);
 }
 
 .login-error {
   margin-bottom: 18px;
   padding: 10px 12px;
-  border: 1px solid var(--danger, #c0392b);
+  border: 1px solid var(--tag-vh-border);
   border-radius: 8px;
-  background: rgba(192, 57, 43, 0.08);
-  color: var(--danger, #c0392b);
+  background: var(--tag-vh-bg);
+  color: var(--danger);
   font-size: 13px;
 }
 
@@ -91,7 +89,7 @@
 .login-label {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--muted);
+  color: var(--text-muted);
   text-transform: lowercase;
   letter-spacing: 0.04em;
 }
@@ -104,7 +102,7 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 12px;
-  font-family: var(--font-sans);
+  font-family: var(--sans);
   font-size: 14px;
   outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -112,7 +110,7 @@
 
 .login-field input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 0, 180, 130), 0.15);
+  box-shadow: var(--focus-ring);
 }
 
 .login-remember {
@@ -120,7 +118,7 @@
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: var(--muted);
+  color: var(--text-muted);
   user-select: none;
   cursor: pointer;
 }
@@ -136,7 +134,7 @@
   border: none;
   border-radius: 8px;
   padding: 11px 14px;
-  font-family: var(--font-sans);
+  font-family: var(--sans);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -155,7 +153,7 @@
   margin-top: 22px;
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--muted);
+  color: var(--text-muted);
   text-align: center;
   line-height: 1.5;
 }
@@ -170,7 +168,7 @@
   align-items: center;
   justify-content: center;
   background: transparent;
-  color: var(--muted);
+  color: var(--text-muted);
   border: 1px solid var(--border);
   border-radius: 6px;
   cursor: pointer;
