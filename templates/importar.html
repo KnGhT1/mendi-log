@@ -168,7 +168,7 @@
      de assets estáticos —ver CacheHeadersMiddleware en main.py). El bloque
      anterior contenía: tabs, importación NDJSON streaming, reprocesado,
      completar zonas y limpiador de duplicados. -->
-<script src="{{ url_for('static', path='/js/importar.js') }}" defer></script>
+<script src="{{ url_for('static', path='js/importar.js') }}?v={{ app_version }}" defer></script>
 
 </div>{# /.importar-wrap #}
 {% endblock %}

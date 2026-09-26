@@ -84,3 +84,10 @@ frontend. Python 3.14, entry point `app.main:app`, `lifespan` llama a `init_db()
   footer/sidebar vía `_ctx(..., app_version=...)`. Bump = editar versión +
   entrada en `CHANGELOG.md` + commit + tag anotado `vX.Y.Z` (fix→parche,
   feature→minor, ruptura→major). Nunca hardcodees la versión en templates.
+- Assets versionados: todo `url_for('static', ...)` en templates lleva el
+  sufijo `?v={{ app_version }}` (Starlette 1.x NO admite `v=` como kwarg:
+  lanza `NoMatchFound`; no intentarlo). Regla: PR que toque `static/` o
+  `templates/` debe bumpear parche aunque el cambio no sea funcional.
+  Excepciones documentadas (URL estable + `immutable`, invalidación manual):
+  `url()` en CSS (fuentes), `images/` de Leaflet vendor y `.map` (solo
+  DevTools). `login.html` no usa `_ctx`: su versión llega vía `_login_ctx()`.

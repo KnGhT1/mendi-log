@@ -321,8 +321,19 @@ def login_form(request: Request, db: Session = Depends(get_session)):
     return templates.TemplateResponse(
         request,
         "login.html",
-        {"current_user": None, "csrf_token": "", "error": None},
+        _login_ctx(error=None),
     )
+
+
+def _login_ctx(error: Optional[str]) -> dict:
+    """Contexto de login.html (standalone, sin _ctx): incluye app_version
+    para el versionado de assets `?v=`. El csrf_token queda "" a propósito."""
+    try:
+        from app import __version__ as app_version
+    except (ImportError, AttributeError):
+        app_version = "dev"
+    return {"current_user": None, "csrf_token": "", "error": error,
+            "app_version": app_version}
 
 
 @app.post("/login")
@@ -347,8 +358,7 @@ def login_submit(
         return templates.TemplateResponse(
             request,
             "login.html",
-            {"current_user": None, "csrf_token": "",
-             "error": "Credenciales incorrectas."},
+            _login_ctx("Credenciales incorrectas."),
             status_code=401,
         )
 
@@ -357,8 +367,7 @@ def login_submit(
         return templates.TemplateResponse(
             request,
             "login.html",
-            {"current_user": None, "csrf_token": "",
-             "error": "Credenciales incorrectas."},
+            _login_ctx("Credenciales incorrectas."),
             status_code=401,
         )
 
