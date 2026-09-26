@@ -5,6 +5,22 @@ Versiones [SemVer](https://semver.org/lang/es/): `vMAYOR.MENOR.PARCHE`.
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-09-26
+
+### Corregido
+- Importación multifichero: ya no se queda colgada (cancelación al
+  abortar, trabajo pesado fuera del loop, envío por lotes de 5 con
+  progreso global y estado "Subiendo archivos…").
+- Favicon en la página de login.
+- Lema "100% local" retirado de la interfaz (despliegue no local);
+  satélite ESRI como capa inicial de los mapas.
+- Responsive en Análisis (desbordamiento del héroe y el calendario).
+
+### Cambiado
+- Refactor interno de CSS (tokens, tarjetas, popovers, puntos) y
+  documentación del design system en `docs/design-system.md`.
+- Clave de caché de Análisis normalizada.
+
 ## [1.0.0] — 2026-09-20
 
 Primera publicación.
