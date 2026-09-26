@@ -5,6 +5,12 @@ Versiones [SemVer](https://semver.org/lang/es/): `vMAYOR.MENOR.PARCHE`.
 
 ## [Unreleased]
 
+## [1.0.2] — 2026-09-26
+
+### Cambiado
+- Assets estáticos versionados con `?v=` ligado a la versión: cada release
+  invalida la caché `immutable` del navegador/CDN sin purga manual.
+
 ## [1.0.1] — 2026-09-26
 
 ### Corregido
